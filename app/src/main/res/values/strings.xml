@@ -1,3 +1,17 @@
 <resources>
     <string name="app_name">HookahTimer</string>
+    <string name="hall_title">Зал</string>
+    <string name="edit_hall">Редактировать</string>
+    <string name="finish_editing">Готово</string>
+    <string name="edit_mode_active">Режим редактирования</string>
+    <string name="empty_hall_title">Столов пока нет</string>
+    <string name="empty_hall_message">Включите режим редактирования и добавьте первый стол</string>
+    <string name="add_table">Добавить стол</string>
+    <string name="delete_table">Удалить %1$s</string>
+    <string name="delete_table_title">Удалить стол?</string>
+    <string name="delete_table_message">Стол «%1$s» исчезнет со схемы зала.</string>
+    <string name="delete">Удалить</string>
+    <string name="cancel">Отмена</string>
+    <string name="circle_table_description">Круглый стол %1$s</string>
+    <string name="pill_table_description">Pill-стол %1$s</string>
 </resources>
