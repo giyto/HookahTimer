@@ -1,20 +1,33 @@
 package ru.hznik.hookahtimer.hall.presentation
 
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import org.junit.Rule
 import org.junit.Test
+import ru.hznik.hookahtimer.MainDispatcherRule
+import ru.hznik.hookahtimer.hall.data.HallRepository
+import ru.hznik.hookahtimer.hall.data.InMemoryHallRepository
+import ru.hznik.hookahtimer.hall.model.HallTable
 import ru.hznik.hookahtimer.hall.model.NormalizedPosition
 import ru.hznik.hookahtimer.hall.model.TablePassage
 import ru.hznik.hookahtimer.hall.model.TableShape
+import ru.hznik.hookahtimer.hall.model.TableTimerState
+import ru.hznik.hookahtimer.hall.model.TimeProvider
 
 class HallViewModelTest {
+    @get:Rule
+    val mainDispatcherRule = MainDispatcherRule()
+
     @Test
     fun addIsAllowedOnlyInEditModeAndCreatesUniqueTables() {
         val ids = ArrayDeque(listOf("id-1", "id-2"))
-        val viewModel = HallViewModel(idFactory = { ids.removeFirst() })
+        val viewModel = viewModel(idFactory = { ids.removeFirst() })
 
         viewModel.onAction(HallAction.AddTable)
         assertTrue(viewModel.state.value.tables.isEmpty())
@@ -34,7 +47,7 @@ class HallViewModelTest {
     fun everyNewTableGetsIndependentPassageIds() {
         val tableIds = ArrayDeque(listOf("id-1", "id-2"))
         val passageIds = ArrayDeque(listOf("p-1", "p-2", "p-3", "p-4"))
-        val viewModel = HallViewModel(
+        val viewModel = viewModel(
             idFactory = { tableIds.removeFirst() },
             passageIdFactory = { passageIds.removeFirst() },
         )
@@ -50,7 +63,7 @@ class HallViewModelTest {
     @Test
     fun tableNumbersAreNotReusedAfterDeletion() {
         val ids = ArrayDeque(listOf("id-1", "id-2"))
-        val viewModel = HallViewModel(idFactory = { ids.removeFirst() })
+        val viewModel = viewModel(idFactory = { ids.removeFirst() })
         viewModel.onAction(HallAction.ToggleEditMode)
         viewModel.onAction(HallAction.AddTable)
         viewModel.onAction(HallAction.RequestDelete("id-1"))
@@ -62,7 +75,7 @@ class HallViewModelTest {
 
     @Test
     fun moveWorksInEditModeAndIsIgnoredInWorkingMode() {
-        val viewModel = HallViewModel(idFactory = { "id-1" })
+        val viewModel = viewModel(idFactory = { "id-1" })
         val editPosition = NormalizedPosition.of(x = 0.9f, y = 0.1f)
         val forbiddenPosition = NormalizedPosition.of(x = 0.2f, y = 0.8f)
         viewModel.onAction(HallAction.ToggleEditMode)
@@ -82,7 +95,6 @@ class HallViewModelTest {
     fun deletionCanBeCancelledWithoutChangingTables() {
         val viewModel = viewModelWithOneTable()
         viewModel.onAction(HallAction.RequestDelete("id-1"))
-
         assertEquals("id-1", viewModel.state.value.pendingDeleteTableId)
 
         viewModel.onAction(HallAction.CancelDelete)
@@ -94,7 +106,7 @@ class HallViewModelTest {
     @Test
     fun confirmationDeletesOnlyRequestedTable() {
         val ids = ArrayDeque(listOf("id-1", "id-2"))
-        val viewModel = HallViewModel(idFactory = { ids.removeFirst() })
+        val viewModel = viewModel(idFactory = { ids.removeFirst() })
         viewModel.onAction(HallAction.ToggleEditMode)
         viewModel.onAction(HallAction.AddTable)
         viewModel.onAction(HallAction.AddTable)
@@ -121,7 +133,6 @@ class HallViewModelTest {
     fun leavingEditModeClearsPendingDeleteRequest() {
         val viewModel = viewModelWithOneTable()
         viewModel.onAction(HallAction.RequestDelete("id-1"))
-
         viewModel.onAction(HallAction.ToggleEditMode)
 
         assertNull(viewModel.state.value.pendingDeleteTableId)
@@ -129,9 +140,9 @@ class HallViewModelTest {
     }
 
     @Test
-    fun settingsUpdateOnlySelectedTableAndKeepItsPosition() {
+    fun settingsUpdateOnlySelectedIdleTableAndKeepItsPosition() {
         val tableIds = ArrayDeque(listOf("id-1", "id-2"))
-        val viewModel = HallViewModel(idFactory = { tableIds.removeFirst() })
+        val viewModel = viewModel(idFactory = { tableIds.removeFirst() })
         viewModel.onAction(HallAction.ToggleEditMode)
         viewModel.onAction(HallAction.AddTable)
         viewModel.onAction(HallAction.AddTable)
@@ -156,35 +167,132 @@ class HallViewModelTest {
     }
 
     @Test
-    fun invalidOrWorkingModeSettingsUpdateIsIgnored() {
-        val viewModel = viewModelWithOneTable()
-        val original = viewModel.state.value.tables.single()
-        val passages = listOf(TablePassage(id = "custom", durationMinutes = 45))
+    fun timerProgressesIndependentlyAndUsesInjectedClock() {
+        var now = 1_000L
+        val timeProvider = TimeProvider { now }
+        val tableIds = ArrayDeque(listOf("id-1", "id-2"))
+        val viewModel = viewModel(
+            timeProvider = timeProvider,
+            idFactory = { tableIds.removeFirst() },
+        )
         viewModel.onAction(HallAction.ToggleEditMode)
+        viewModel.onAction(HallAction.AddTable)
+        viewModel.onAction(HallAction.AddTable)
+        viewModel.onAction(HallAction.ToggleEditMode)
+
+        viewModel.onAction(HallAction.AdvanceTimer("id-1"))
+        now = 5_000L
+        viewModel.onAction(HallAction.AdvanceTimer("id-2"))
+        now = 10_000L
+        viewModel.onAction(HallAction.AdvanceTimer("id-1"))
+
+        val tables = viewModel.state.value.tables
+        val first = tables.single { it.id == "id-1" }
+        val second = tables.single { it.id == "id-2" }
+        assertEquals(
+            TableTimerState.Running(first.passages[1].id, 1_810_000L),
+            first.timerState,
+        )
+        assertEquals(
+            TableTimerState.Running(second.passages[0].id, 1_805_000L),
+            second.timerState,
+        )
+    }
+
+    @Test
+    fun activeTableCannotBeReconfiguredButCanBeDeletedInEditMode() {
+        val viewModel = viewModelWithOneTable(timeProvider = TimeProvider { 1_000L })
+        viewModel.onAction(HallAction.ToggleEditMode)
+        viewModel.onAction(HallAction.AdvanceTimer("id-1"))
+        viewModel.onAction(HallAction.ToggleEditMode)
+        val running = viewModel.state.value.tables.single()
 
         viewModel.onAction(
             HallAction.UpdateTableSettings(
                 tableId = "id-1",
-                name = "VIP",
+                name = "Нельзя",
                 shape = TableShape.PILL,
-                passages = passages,
-            ),
-        )
-        viewModel.onAction(HallAction.ToggleEditMode)
-        viewModel.onAction(
-            HallAction.UpdateTableSettings(
-                tableId = "missing",
-                name = "VIP",
-                shape = TableShape.PILL,
-                passages = passages,
+                passages = listOf(TablePassage("replacement", 10)),
             ),
         )
 
-        assertEquals(original, viewModel.state.value.tables.single())
+        assertEquals(running, viewModel.state.value.tables.single())
+        viewModel.onAction(HallAction.RequestDelete("id-1"))
+        viewModel.onAction(HallAction.ConfirmDelete)
+        assertTrue(viewModel.state.value.tables.isEmpty())
     }
 
-    private fun viewModelWithOneTable(): HallViewModel = HallViewModel(idFactory = { "id-1" }).also {
+    @Test
+    fun activeTableCanMoveWithoutChangingTimer() {
+        val viewModel = viewModelWithOneTable(timeProvider = TimeProvider { 1_000L })
+        viewModel.onAction(HallAction.ToggleEditMode)
+        viewModel.onAction(HallAction.AdvanceTimer("id-1"))
+        viewModel.onAction(HallAction.ToggleEditMode)
+        val timerBeforeMove = viewModel.state.value.tables.single().timerState
+        val newPosition = NormalizedPosition.of(0.8f, 0.2f)
+
+        viewModel.onAction(HallAction.MoveTable("id-1", newPosition))
+
+        assertEquals(newPosition, viewModel.state.value.tables.single().position)
+        assertEquals(timerBeforeMove, viewModel.state.value.tables.single().timerState)
+    }
+
+    @Test
+    fun repeatedTapWhileTimerCommandIsRunningIsDropped() {
+        val repository = BlockingTimerRepository()
+        val viewModel = HallViewModel(
+            repository = repository,
+            timeProvider = TimeProvider { 1_000L },
+        )
+
+        viewModel.onAction(HallAction.AdvanceTimer("table"))
+        viewModel.onAction(HallAction.AdvanceTimer("table"))
+
+        assertEquals(1, repository.advanceCalls)
+        repository.release.complete(Unit)
+    }
+
+    private fun viewModelWithOneTable(
+        timeProvider: TimeProvider = TimeProvider { 1_000L },
+    ): HallViewModel = viewModel(
+        timeProvider = timeProvider,
+        idFactory = { "id-1" },
+    ).also {
         it.onAction(HallAction.ToggleEditMode)
         it.onAction(HallAction.AddTable)
+    }
+
+    private fun viewModel(
+        timeProvider: TimeProvider = TimeProvider { 1_000L },
+        idFactory: () -> String = { "id-1" },
+        passageIdFactory: () -> String = { java.util.UUID.randomUUID().toString() },
+    ): HallViewModel = HallViewModel(
+        repository = InMemoryHallRepository(),
+        timeProvider = timeProvider,
+        idFactory = idFactory,
+        passageIdFactory = passageIdFactory,
+    )
+
+    private class BlockingTimerRepository : HallRepository {
+        override val tables: Flow<List<HallTable>> = MutableStateFlow(
+            listOf(HallTable(id = "table", name = "Стол")),
+        )
+        val release = CompletableDeferred<Unit>()
+        var advanceCalls = 0
+
+        override suspend fun addTable(tableId: String, passageIds: List<String>) = Unit
+        override suspend fun moveTable(tableId: String, position: NormalizedPosition) = Unit
+        override suspend fun updateTableSettings(
+            tableId: String,
+            name: String,
+            shape: TableShape,
+            passages: List<TablePassage>,
+        ) = Unit
+        override suspend fun deleteTable(tableId: String) = Unit
+
+        override suspend fun advanceTimer(tableId: String, nowEpochMillis: Long) {
+            advanceCalls += 1
+            release.await()
+        }
     }
 }

@@ -9,7 +9,6 @@ data class HallUiState(
     val tables: List<HallTable> = emptyList(),
     val isEditMode: Boolean = false,
     val pendingDeleteTableId: String? = null,
-    val nextTableNumber: Int = 1,
 )
 
 sealed interface HallAction {
@@ -26,6 +25,7 @@ sealed interface HallAction {
         val shape: TableShape,
         val passages: List<TablePassage>,
     ) : HallAction
+    data class AdvanceTimer(val tableId: String) : HallAction
     data object ConfirmDelete : HallAction
     data object CancelDelete : HallAction
 }

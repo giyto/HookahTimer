@@ -21,7 +21,9 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -29,6 +31,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
@@ -37,10 +40,16 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.repeatOnLifecycle
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import ru.hznik.hookahtimer.R
 import ru.hznik.hookahtimer.hall.model.HallTable
 import ru.hznik.hookahtimer.hall.model.NormalizedPosition
 import ru.hznik.hookahtimer.hall.model.TableShape
+import ru.hznik.hookahtimer.hall.model.SystemTimeProvider
+import ru.hznik.hookahtimer.hall.model.TimeProvider
 import ru.hznik.hookahtimer.hall.presentation.HallAction
 import ru.hznik.hookahtimer.hall.presentation.HallUiState
 import ru.hznik.hookahtimer.ui.theme.HookahTimerTheme
@@ -51,9 +60,11 @@ fun HallScreen(
     onAction: (HallAction) -> Unit,
     onOpenSettings: (String) -> Unit = {},
     modifier: Modifier = Modifier,
+    timeProvider: TimeProvider = SystemTimeProvider,
 ) {
     val pendingDeleteTable = state.tables.firstOrNull { it.id == state.pendingDeleteTableId }
     val addTableDescription = stringResource(R.string.add_table)
+    val nowEpochMillis = rememberCurrentEpochMillis(timeProvider)
 
     Scaffold(
         modifier = modifier.fillMaxSize(),
@@ -84,6 +95,7 @@ fun HallScreen(
             state = state,
             onAction = onAction,
             onOpenSettings = onOpenSettings,
+            nowEpochMillis = nowEpochMillis,
             modifier = Modifier
                 .fillMaxSize()
                 .padding(contentPadding)
@@ -157,6 +169,7 @@ private fun HallField(
     state: HallUiState,
     onAction: (HallAction) -> Unit,
     onOpenSettings: (String) -> Unit,
+    nowEpochMillis: Long,
     modifier: Modifier = Modifier,
 ) {
     var fieldSize by remember { mutableStateOf(IntSize.Zero) }
@@ -189,10 +202,12 @@ private fun HallField(
                     table = table,
                     fieldSize = fieldSize,
                     isEditMode = state.isEditMode,
+                    nowEpochMillis = nowEpochMillis,
                     onPositionChange = { tableId, position ->
                         onAction(HallAction.MoveTable(tableId, position))
                     },
                     onOpenSettings = { onOpenSettings(table.id) },
+                    onAdvanceTimer = { onAction(HallAction.AdvanceTimer(table.id)) },
                     onDelete = { onAction(HallAction.RequestDelete(table.id)) },
                 )
             }
@@ -217,6 +232,31 @@ private fun HallField(
         }
     }
 }
+
+@Composable
+private fun rememberCurrentEpochMillis(timeProvider: TimeProvider): Long {
+    val lifecycleOwner = LocalLifecycleOwner.current
+    var nowEpochMillis by remember(timeProvider) {
+        mutableLongStateOf(timeProvider.nowEpochMillis())
+    }
+
+    LaunchedEffect(lifecycleOwner, timeProvider) {
+        lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            while (isActive) {
+                nowEpochMillis = timeProvider.nowEpochMillis()
+                delay(nextTimerTickDelayMillis(nowEpochMillis))
+            }
+        }
+    }
+    return nowEpochMillis
+}
+
+internal fun nextTimerTickDelayMillis(nowEpochMillis: Long): Long {
+    val remainder = Math.floorMod(nowEpochMillis, MILLIS_PER_SECOND)
+    return if (remainder == 0L) MILLIS_PER_SECOND else MILLIS_PER_SECOND - remainder
+}
+
+private const val MILLIS_PER_SECOND = 1_000L
 
 @Composable
 private fun EmptyHall(modifier: Modifier = Modifier) {
@@ -249,6 +289,12 @@ object HallTestTags {
     fun table(id: String): String = "table_$id"
 
     fun deleteTable(id: String): String = "delete_table_$id"
+
+    fun tableName(id: String): String = "table_name_$id"
+
+    fun tableTimer(id: String): String = "table_timer_$id"
+
+    fun completedMark(id: String): String = "completed_mark_$id"
 }
 
 @Preview(widthDp = 1280, heightDp = 800, showBackground = true)

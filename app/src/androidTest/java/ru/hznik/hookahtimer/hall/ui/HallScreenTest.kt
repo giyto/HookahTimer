@@ -4,8 +4,10 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.test.assertContentDescriptionEquals
+import androidx.compose.ui.test.assertHasClickAction
 import androidx.compose.ui.test.assertHasNoClickAction
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.click
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
@@ -17,9 +19,13 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
+import ru.hznik.hookahtimer.hall.data.InMemoryHallRepository
 import ru.hznik.hookahtimer.hall.model.HallTable
 import ru.hznik.hookahtimer.hall.model.NormalizedPosition
+import ru.hznik.hookahtimer.hall.model.TablePassage
 import ru.hznik.hookahtimer.hall.model.TableShape
+import ru.hznik.hookahtimer.hall.model.TableTimerState
+import ru.hznik.hookahtimer.hall.model.TimeProvider
 import ru.hznik.hookahtimer.hall.presentation.HallAction
 import ru.hznik.hookahtimer.hall.presentation.HallUiState
 import ru.hznik.hookahtimer.hall.presentation.HallViewModel
@@ -151,6 +157,29 @@ class HallScreenTest {
     }
 
     @Test
+    fun completedDragEmitsExactlyOneRepositoryMoveAction() {
+        val actions = mutableListOf<HallAction>()
+        setStaticContent(
+            state = HallUiState(
+                tables = listOf(HallTable(id = "table", name = "Стол")),
+                isEditMode = true,
+            ),
+            onAction = actions::add,
+        )
+
+        composeRule.onNodeWithTag(HallTestTags.table("table")).performTouchInput {
+            swipe(
+                start = center,
+                end = center + Offset(300f, 200f),
+                durationMillis = 500,
+            )
+        }
+        composeRule.waitForIdle()
+
+        assertEquals(1, actions.filterIsInstance<HallAction.MoveTable>().size)
+    }
+
+    @Test
     fun tapInEditModeDoesNotMoveTable() {
         val viewModel = setViewModelContent()
         composeRule.onNodeWithTag(HallTestTags.TOGGLE_EDIT_MODE).performClick()
@@ -192,26 +221,167 @@ class HallScreenTest {
     }
 
     @Test
-    fun workingModeTableHasNoSettingsClickAction() {
+    fun workingModeTableHasTimerClickAction() {
+        var timerAction: HallAction? = null
         setStaticContent(
-            HallUiState(
+            state = HallUiState(
                 tables = listOf(HallTable(id = "table", name = "Стол")),
             ),
+            onAction = { timerAction = it },
         )
 
-        composeRule.onNodeWithTag(HallTestTags.table("table")).assertHasNoClickAction()
+        composeRule.onNodeWithTag(HallTestTags.table("table"))
+            .assertHasClickAction()
+            .performClick()
+        assertEquals(HallAction.AdvanceTimer("table"), timerAction)
+    }
+
+    @Test
+    fun timerOverdueAndCompletedStatesHaveExpectedContent() {
+        val passages = listOf(
+            TablePassage("p1", 1),
+            TablePassage("p2", 1),
+        )
+        setStaticContent(
+            state = HallUiState(
+                tables = listOf(
+                    HallTable(
+                        id = "running",
+                        name = "Работает",
+                        shape = TableShape.PILL,
+                        position = NormalizedPosition.of(0.15f, 0.2f),
+                        passages = passages,
+                        timerState = TableTimerState.Running("p1", 150_001L),
+                    ),
+                    HallTable(
+                        id = "overdue",
+                        name = "Просрочен",
+                        position = NormalizedPosition.of(0.5f, 0.5f),
+                        passages = passages,
+                        timerState = TableTimerState.Running("p2", 60_001L),
+                    ),
+                    HallTable(
+                        id = "completed",
+                        name = "Готов",
+                        position = NormalizedPosition.of(0.85f, 0.8f),
+                        passages = passages,
+                        timerState = TableTimerState.Completed,
+                    ),
+                ),
+            ),
+            timeProvider = TimeProvider { 120_001L },
+        )
+
+        composeRule.onNodeWithTag(
+            HallTestTags.tableTimer("running"),
+            useUnmergedTree = true,
+        )
+            .assertTextEquals("00:30")
+        composeRule.onNodeWithTag(
+            HallTestTags.tableTimer("overdue"),
+            useUnmergedTree = true,
+        )
+            .assertTextEquals("-01:00")
+        composeRule.onNodeWithTag(
+            HallTestTags.completedMark("completed"),
+            useUnmergedTree = true,
+        )
+            .assertTextEquals("×")
+        composeRule.onNodeWithTag(HallTestTags.table("overdue"))
+            .assertContentDescriptionEquals(
+                "Круглый стол Просрочен, проходка 2, просрочка -01:00",
+            )
+        composeRule.onNodeWithTag(HallTestTags.table("completed"))
+            .assertContentDescriptionEquals(
+                "Круглый стол Готов, обслуживание завершено",
+            )
+    }
+
+    @Test
+    fun runningOverdueAndCompletedTablesCannotOpenSettingsInEditMode() {
+        val table = HallTable(id = "table", name = "Стол")
+        setStaticContent(
+            state = HallUiState(
+                tables = listOf(
+                    table.copy(
+                        id = "running",
+                        position = NormalizedPosition.of(0.15f, 0.2f),
+                        timerState = TableTimerState.Running(
+                            table.passages.first().id,
+                            1_801_000L,
+                        ),
+                    ),
+                    table.copy(
+                        id = "overdue",
+                        position = NormalizedPosition.of(0.5f, 0.5f),
+                        timerState = TableTimerState.Running(
+                            table.passages.first().id,
+                            500L,
+                        ),
+                    ),
+                    table.copy(
+                        id = "completed",
+                        position = NormalizedPosition.of(0.85f, 0.8f),
+                        timerState = TableTimerState.Completed,
+                    ),
+                ),
+                isEditMode = true,
+            ),
+            timeProvider = TimeProvider { 1_000L },
+        )
+
+        listOf("running", "overdue", "completed").forEach { id ->
+            composeRule.onNodeWithTag(HallTestTags.table(id)).assertHasNoClickAction()
+        }
+    }
+
+    @Test
+    fun twoPassageCycleRequiresSeparateTapForReset() {
+        val viewModel = setViewModelContent()
+        composeRule.onNodeWithTag(HallTestTags.TOGGLE_EDIT_MODE).performClick()
+        composeRule.onNodeWithTag(HallTestTags.ADD_TABLE).performClick()
+        composeRule.onNodeWithTag(HallTestTags.TOGGLE_EDIT_MODE).performClick()
+        val tableNode = composeRule.onNodeWithTag(HallTestTags.table("id-1"))
+
+        tableNode.performClick()
+        assertTrue(viewModel.state.value.tables.single().timerState is TableTimerState.Running)
+        assertEquals(
+            viewModel.state.value.tables.single().passages[0].id,
+            (viewModel.state.value.tables.single().timerState as TableTimerState.Running).passageId,
+        )
+
+        tableNode.performClick()
+        assertEquals(
+            viewModel.state.value.tables.single().passages[1].id,
+            (viewModel.state.value.tables.single().timerState as TableTimerState.Running).passageId,
+        )
+
+        tableNode.performClick()
+        assertEquals(TableTimerState.Completed, viewModel.state.value.tables.single().timerState)
+        composeRule.onNodeWithTag(
+            HallTestTags.completedMark("id-1"),
+            useUnmergedTree = true,
+        ).assertIsDisplayed()
+
+        tableNode.performClick()
+        assertEquals(TableTimerState.Idle, viewModel.state.value.tables.single().timerState)
+        composeRule.onNodeWithTag(HallTestTags.TOGGLE_EDIT_MODE).performClick()
+        tableNode.assertHasClickAction()
     }
 
     private fun setStaticContent(
         state: HallUiState,
         onOpenSettings: (String) -> Unit = {},
+        onAction: (HallAction) -> Unit = {},
+        timeProvider: TimeProvider = TimeProvider { 1_000L },
     ) {
         composeRule.setContent {
             HookahTimerTheme {
                 HallScreen(
                     state = state,
-                    onAction = {},
+                    onAction = onAction,
                     onOpenSettings = onOpenSettings,
+                    timeProvider = timeProvider,
                 )
             }
         }
@@ -219,13 +389,19 @@ class HallScreenTest {
 
     private fun setViewModelContent(): HallViewModel {
         var nextId = 0
-        val viewModel = HallViewModel(idFactory = { "id-${++nextId}" })
+        val timeProvider = TimeProvider { 1_000L }
+        val viewModel = HallViewModel(
+            repository = InMemoryHallRepository(),
+            timeProvider = timeProvider,
+            idFactory = { "id-${++nextId}" },
+        )
         composeRule.setContent {
             val state by viewModel.state.collectAsState()
             HookahTimerTheme {
                 HallScreen(
                     state = state,
                     onAction = viewModel::onAction,
+                    timeProvider = timeProvider,
                 )
             }
         }

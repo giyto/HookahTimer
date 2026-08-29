@@ -14,7 +14,11 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         setContent {
             HookahTimerTheme {
-                val hallViewModel: HallViewModel = viewModel()
+                val hallViewModel: HallViewModel = viewModel(
+                    factory = HallViewModel.factory(
+                        repository = (application as HookahTimerApplication).hallRepository,
+                    ),
+                )
                 HookahTimerApp(hallViewModel = hallViewModel)
             }
         }

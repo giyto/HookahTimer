@@ -1,21 +1,48 @@
 package ru.hznik.hookahtimer.hall.presentation
 
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.viewModelScope
 import java.util.UUID
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
-import ru.hznik.hookahtimer.hall.model.HallTable
-import ru.hznik.hookahtimer.hall.model.NormalizedPosition
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import ru.hznik.hookahtimer.hall.data.HallRepository
+import ru.hznik.hookahtimer.hall.model.SystemTimeProvider
 import ru.hznik.hookahtimer.hall.model.TablePassage
+import ru.hznik.hookahtimer.hall.model.TableTimerState
+import ru.hznik.hookahtimer.hall.model.TimeProvider
 
 class HallViewModel(
+    private val repository: HallRepository,
+    val timeProvider: TimeProvider = SystemTimeProvider,
     private val idFactory: () -> String = { UUID.randomUUID().toString() },
     private val passageIdFactory: () -> String = { UUID.randomUUID().toString() },
 ) : ViewModel() {
-    private val mutableState = MutableStateFlow(HallUiState())
-    val state: StateFlow<HallUiState> = mutableState.asStateFlow()
+    private val editorState = MutableStateFlow(EditorState())
+    private val commandMutex = Mutex()
+    private val processingTableIds = mutableSetOf<String>()
+
+    val state: StateFlow<HallUiState> = combine(
+        repository.tables,
+        editorState,
+    ) { tables, editor ->
+        HallUiState(
+            tables = tables,
+            isEditMode = editor.isEditMode,
+            pendingDeleteTableId = editor.pendingDeleteTableId,
+        )
+    }.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.Eagerly,
+        initialValue = HallUiState(),
+    )
 
     fun onAction(action: HallAction) {
         when (action) {
@@ -24,13 +51,14 @@ class HallViewModel(
             is HallAction.MoveTable -> moveTable(action)
             is HallAction.RequestDelete -> requestDelete(action.tableId)
             is HallAction.UpdateTableSettings -> updateTableSettings(action)
+            is HallAction.AdvanceTimer -> advanceTimer(action.tableId)
             HallAction.ConfirmDelete -> confirmDelete()
             HallAction.CancelDelete -> cancelDelete()
         }
     }
 
     private fun toggleEditMode() {
-        mutableState.update { current ->
+        editorState.update { current ->
             current.copy(
                 isEditMode = !current.isEditMode,
                 pendingDeleteTableId = null,
@@ -39,41 +67,24 @@ class HallViewModel(
     }
 
     private fun addTable() {
-        mutableState.update { current ->
-            if (!current.isEditMode) return@update current
-
-            val number = current.nextTableNumber
-            current.copy(
-                tables = current.tables + HallTable(
-                    id = idFactory(),
-                    name = "Стол $number",
-                    position = initialPosition(number),
-                    passages = TablePassage.defaultList(passageIdFactory),
-                ),
-                nextTableNumber = number + 1,
-            )
+        if (!editorState.value.isEditMode) return
+        val tableId = idFactory()
+        val passageIds = List(TablePassage.DEFAULT_PASSAGE_COUNT) { passageIdFactory() }
+        launchCommand {
+            repository.addTable(tableId, passageIds)
         }
     }
 
     private fun moveTable(action: HallAction.MoveTable) {
-        mutableState.update { current ->
-            if (!current.isEditMode) return@update current
-
-            current.copy(
-                tables = current.tables.map { table ->
-                    if (table.id == action.tableId) {
-                        table.copy(position = action.position)
-                    } else {
-                        table
-                    }
-                },
-            )
+        if (!editorState.value.isEditMode || state.value.tables.none { it.id == action.tableId }) return
+        launchTableCommand(action.tableId) {
+            repository.moveTable(action.tableId, action.position)
         }
     }
 
     private fun requestDelete(tableId: String) {
-        mutableState.update { current ->
-            if (!current.isEditMode || current.tables.none { it.id == tableId }) {
+        editorState.update { current ->
+            if (!current.isEditMode || state.value.tables.none { it.id == tableId }) {
                 current
             } else {
                 current.copy(pendingDeleteTableId = tableId)
@@ -82,63 +93,89 @@ class HallViewModel(
     }
 
     private fun updateTableSettings(action: HallAction.UpdateTableSettings) {
-        mutableState.update { current ->
-            val trimmedName = action.name.trim()
-            val hasUniquePassageIds = action.passages.distinctBy { it.id }.size == action.passages.size
-            if (
-                !current.isEditMode ||
-                trimmedName.isEmpty() ||
-                action.passages.isEmpty() ||
-                !hasUniquePassageIds ||
-                current.tables.none { it.id == action.tableId }
-            ) {
-                return@update current
-            }
-
-            current.copy(
-                tables = current.tables.map { table ->
-                    if (table.id == action.tableId) {
-                        table.copy(
-                            name = trimmedName,
-                            shape = action.shape,
-                            passages = action.passages.toList(),
-                        )
-                    } else {
-                        table
-                    }
-                },
+        val trimmedName = action.name.trim()
+        val selectedTable = state.value.tables.firstOrNull { it.id == action.tableId }
+        val hasUniquePassageIds = action.passages.distinctBy { it.id }.size == action.passages.size
+        if (
+            !editorState.value.isEditMode ||
+            selectedTable?.timerState != TableTimerState.Idle ||
+            trimmedName.isEmpty() ||
+            action.passages.isEmpty() ||
+            !hasUniquePassageIds
+        ) {
+            return
+        }
+        launchTableCommand(action.tableId) {
+            repository.updateTableSettings(
+                tableId = action.tableId,
+                name = trimmedName,
+                shape = action.shape,
+                passages = action.passages,
             )
+        }
+    }
+
+    private fun advanceTimer(tableId: String) {
+        if (editorState.value.isEditMode || state.value.tables.none { it.id == tableId }) return
+        launchTableCommand(tableId) {
+            repository.advanceTimer(tableId, timeProvider.nowEpochMillis())
         }
     }
 
     private fun confirmDelete() {
-        mutableState.update { current ->
-            val tableId = current.pendingDeleteTableId ?: return@update current
-            current.copy(
-                tables = current.tables.filterNot { it.id == tableId },
-                pendingDeleteTableId = null,
-            )
+        val tableId = editorState.value.pendingDeleteTableId ?: return
+        if (!editorState.value.isEditMode) return
+        launchTableCommand(tableId) {
+            repository.deleteTable(tableId)
+            editorState.update { it.copy(pendingDeleteTableId = null) }
         }
     }
 
     private fun cancelDelete() {
-        mutableState.update { current ->
+        editorState.update { current ->
             if (current.pendingDeleteTableId == null) current else current.copy(pendingDeleteTableId = null)
         }
     }
 
-    private fun initialPosition(number: Int): NormalizedPosition {
-        val index = number - 1
-        val column = index % INITIAL_COLUMNS
-        val row = (index / INITIAL_COLUMNS) % INITIAL_ROWS
-        return NormalizedPosition.of(
-            x = (column + 1f) / (INITIAL_COLUMNS + 1f),
-            y = (row + 1f) / (INITIAL_ROWS + 1f),
-        )
+    private fun launchCommand(block: suspend () -> Unit) {
+        viewModelScope.launch {
+            commandMutex.withLock { block() }
+        }
     }
 
-    private companion object {
-        const val INITIAL_COLUMNS = 4
-        const val INITIAL_ROWS = 3
+    private fun launchTableCommand(tableId: String, block: suspend () -> Unit) {
+        synchronized(processingTableIds) {
+            if (!processingTableIds.add(tableId)) return
+        }
+        viewModelScope.launch {
+            try {
+                commandMutex.withLock { block() }
+            } finally {
+                synchronized(processingTableIds) {
+                    processingTableIds.remove(tableId)
+                }
+            }
+        }
+    }
+
+    private data class EditorState(
+        val isEditMode: Boolean = false,
+        val pendingDeleteTableId: String? = null,
+    )
+
+    companion object {
+        fun factory(
+            repository: HallRepository,
+            timeProvider: TimeProvider = SystemTimeProvider,
+        ): ViewModelProvider.Factory = object : ViewModelProvider.Factory {
+            @Suppress("UNCHECKED_CAST")
+            override fun <T : ViewModel> create(modelClass: Class<T>): T {
+                require(modelClass.isAssignableFrom(HallViewModel::class.java))
+                return HallViewModel(
+                    repository = repository,
+                    timeProvider = timeProvider,
+                ) as T
+            }
+        }
     }
 }

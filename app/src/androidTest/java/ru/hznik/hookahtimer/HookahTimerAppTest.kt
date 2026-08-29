@@ -12,7 +12,12 @@ import androidx.test.espresso.Espresso.pressBack
 import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
+import ru.hznik.hookahtimer.hall.data.InMemoryHallRepository
+import ru.hznik.hookahtimer.hall.model.HallTable
+import ru.hznik.hookahtimer.hall.model.TablePassage
 import ru.hznik.hookahtimer.hall.model.TableShape
+import ru.hznik.hookahtimer.hall.model.TableTimerState
+import ru.hznik.hookahtimer.hall.model.TimeProvider
 import ru.hznik.hookahtimer.hall.presentation.HallAction
 import ru.hznik.hookahtimer.hall.presentation.HallViewModel
 import ru.hznik.hookahtimer.hall.settings.ui.TableSettingsTestTags
@@ -25,7 +30,7 @@ class HookahTimerAppTest {
 
     @Test
     fun missingTableRouteSafelyReturnsToHall() {
-        val viewModel = HallViewModel()
+        val viewModel = HallViewModel(repository = InMemoryHallRepository())
         setAppContent(
             viewModel = viewModel,
             startDestination = tableSettingsRoute("missing"),
@@ -60,8 +65,9 @@ class HookahTimerAppTest {
     @Test
     fun cancelLeavesOriginalTableUntouched() {
         val viewModel = configuredHallViewModel()
-        val original = viewModel.state.value.tables.single()
         setAppContent(viewModel)
+        composeRule.waitForIdle()
+        val original = viewModel.state.value.tables.single()
 
         composeRule.onNodeWithTag(HallTestTags.table("table-1")).performClick()
         composeRule.onNodeWithTag(TableSettingsTestTags.NAME)
@@ -75,8 +81,9 @@ class HookahTimerAppTest {
     @Test
     fun systemBackLeavesOriginalTableUntouched() {
         val viewModel = configuredHallViewModel()
-        val original = viewModel.state.value.tables.single()
         setAppContent(viewModel)
+        composeRule.waitForIdle()
+        val original = viewModel.state.value.tables.single()
 
         composeRule.onNodeWithTag(HallTestTags.table("table-1")).performClick()
         composeRule.onNodeWithTag(TableSettingsTestTags.NAME)
@@ -88,16 +95,50 @@ class HookahTimerAppTest {
         assertEquals(original, viewModel.state.value.tables.single())
     }
 
+    @Test
+    fun activeTableSettingsRouteSafelyReturnsToHall() {
+        val passages = configuredPassages()
+        val table = HallTable(
+            id = "table-1",
+            name = "Стол 1",
+            passages = passages,
+            timerState = TableTimerState.Running("passage-1", 1_801_000L),
+        )
+        val viewModel = HallViewModel(
+            repository = InMemoryHallRepository(initialTables = listOf(table)),
+            timeProvider = TimeProvider { 1_000L },
+        )
+        viewModel.onAction(HallAction.ToggleEditMode)
+
+        setAppContent(
+            viewModel = viewModel,
+            startDestination = tableSettingsRoute("table-1"),
+        )
+
+        composeRule.onNodeWithText("Зал").assertIsDisplayed()
+        composeRule.onNodeWithTag(TableSettingsTestTags.NAME).assertDoesNotExist()
+    }
+
     private fun configuredHallViewModel(): HallViewModel {
-        val passageIds = ArrayDeque(listOf("passage-1", "passage-2"))
         return HallViewModel(
-            idFactory = { "table-1" },
-            passageIdFactory = { passageIds.removeFirst() },
+            repository = InMemoryHallRepository(
+                initialTables = listOf(
+                    HallTable(
+                        id = "table-1",
+                        name = "Стол 1",
+                        passages = configuredPassages(),
+                    ),
+                ),
+            ),
         ).also { viewModel ->
             viewModel.onAction(HallAction.ToggleEditMode)
-            viewModel.onAction(HallAction.AddTable)
         }
     }
+
+    private fun configuredPassages(): List<TablePassage> = listOf(
+        TablePassage("passage-1", 30),
+        TablePassage("passage-2", 30),
+    )
 
     private fun setAppContent(
         viewModel: HallViewModel,

@@ -4,6 +4,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
@@ -16,15 +17,19 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -41,7 +46,9 @@ import ru.hznik.hookahtimer.hall.model.NormalizedPosition
 import ru.hznik.hookahtimer.hall.model.PixelPosition
 import ru.hznik.hookahtimer.hall.model.PixelSize
 import ru.hznik.hookahtimer.hall.model.TableShape
+import ru.hznik.hookahtimer.hall.model.TableTimerState
 import ru.hznik.hookahtimer.hall.model.clampWithin
+import ru.hznik.hookahtimer.hall.model.timerPresentation
 import ru.hznik.hookahtimer.hall.model.toNormalizedPosition
 import ru.hznik.hookahtimer.hall.model.toPixelPosition
 
@@ -50,8 +57,10 @@ internal fun HallTableItem(
     table: HallTable,
     fieldSize: IntSize,
     isEditMode: Boolean,
+    nowEpochMillis: Long,
     onPositionChange: (String, NormalizedPosition) -> Unit,
     onOpenSettings: () -> Unit,
+    onAdvanceTimer: () -> Unit,
     onDelete: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -67,17 +76,22 @@ internal fun HallTableItem(
         width = fieldSize.width.toFloat(),
         height = fieldSize.height.toFloat(),
     )
-    val pixelPosition = table.position.toPixelPosition(
+    val storedPixelPosition = table.position.toPixelPosition(
         fieldSize = fieldPixelSize,
         tableSize = tablePixelSize,
     )
+    var draggedPixelPosition by remember(table.id, table.position) {
+        mutableStateOf<PixelPosition?>(null)
+    }
+    val displayedPixelPosition = draggedPixelPosition ?: storedPixelPosition
     val latestPosition by rememberUpdatedState(table.position)
     val latestOnPositionChange by rememberUpdatedState(onPositionChange)
     val shape = when (table.shape) {
         TableShape.CIRCLE -> CircleShape
         TableShape.PILL -> RoundedCornerShape(percent = 50)
     }
-    val tableDescription = stringResource(
+    val timer = table.timerPresentation(nowEpochMillis)
+    val shapeDescription = stringResource(
         if (table.shape == TableShape.CIRCLE) {
             R.string.circle_table_description
         } else {
@@ -85,22 +99,41 @@ internal fun HallTableItem(
         },
         table.name,
     )
+    val tableDescription = when {
+        timer.isCompleted -> stringResource(
+            R.string.completed_table_description,
+            shapeDescription,
+        )
+        timer.isOverdue -> stringResource(
+            R.string.overdue_table_description,
+            shapeDescription,
+            checkNotNull(timer.passageNumber),
+            checkNotNull(timer.timerText),
+        )
+        timer.timerText != null -> stringResource(
+            R.string.running_table_description,
+            shapeDescription,
+            checkNotNull(timer.passageNumber),
+            timer.timerText,
+        )
+        else -> shapeDescription
+    }
     val deleteDescription = stringResource(R.string.delete_table, table.name)
     val editBorder = if (isEditMode) {
         Modifier.border(width = 3.dp, color = MaterialTheme.colorScheme.primary, shape = shape)
     } else {
         Modifier
     }
-    val settingsModifier = if (isEditMode) {
-        Modifier.clickable(
+    val clickModifier = when {
+        !isEditMode -> Modifier.clickable(role = Role.Button, onClick = onAdvanceTimer)
+        table.timerState == TableTimerState.Idle -> Modifier.clickable(
             role = Role.Button,
             onClick = onOpenSettings,
         )
-    } else {
-        Modifier
+        else -> Modifier
     }
     val dragModifier = if (isEditMode && fieldSize != IntSize.Zero) {
-        Modifier.pointerInput(table.id, fieldSize, tablePixelSize) {
+        Modifier.pointerInput(table.id, table.position, fieldSize, tablePixelSize) {
             var workingPosition = latestPosition.toPixelPosition(
                 fieldSize = fieldPixelSize,
                 tableSize = tablePixelSize,
@@ -111,6 +144,7 @@ internal fun HallTableItem(
                         fieldSize = fieldPixelSize,
                         tableSize = tablePixelSize,
                     )
+                    draggedPixelPosition = workingPosition
                 },
                 onDrag = { change, dragAmount ->
                     change.consume()
@@ -121,6 +155,9 @@ internal fun HallTableItem(
                         fieldSize = fieldPixelSize,
                         tableSize = tablePixelSize,
                     )
+                    draggedPixelPosition = workingPosition
+                },
+                onDragEnd = {
                     latestOnPositionChange(
                         table.id,
                         workingPosition.toNormalizedPosition(
@@ -129,39 +166,44 @@ internal fun HallTableItem(
                         ),
                     )
                 },
+                onDragCancel = { draggedPixelPosition = null },
             )
         }
     } else {
         Modifier
     }
+    val containerColor = if (timer.isOverdue) {
+        MaterialTheme.colorScheme.errorContainer
+    } else {
+        MaterialTheme.colorScheme.secondaryContainer
+    }
+    val contentColor = if (timer.isOverdue) {
+        MaterialTheme.colorScheme.onErrorContainer
+    } else {
+        MaterialTheme.colorScheme.onSecondaryContainer
+    }
 
     Surface(
         modifier = modifier
-            .offsetInPixels(pixelPosition)
+            .offsetInPixels(displayedPixelPosition)
             .size(width = dimensions.width, height = dimensions.height)
             .then(editBorder)
-            .then(settingsModifier)
+            .then(clickModifier)
             .then(dragModifier)
             .testTag(HallTestTags.table(table.id))
             .semantics { contentDescription = tableDescription },
         shape = shape,
-        color = MaterialTheme.colorScheme.secondaryContainer,
-        contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+        color = containerColor,
+        contentColor = contentColor,
         tonalElevation = 4.dp,
         shadowElevation = 2.dp,
     ) {
         Box(modifier = Modifier.fillMaxSize()) {
-            Text(
-                text = table.name,
-                modifier = Modifier
-                    .align(Alignment.Center)
-                    .padding(horizontal = 16.dp),
-                textAlign = TextAlign.Center,
-                fontWeight = FontWeight.SemiBold,
-                fontSize = 18.sp,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-            )
+            when {
+                timer.isCompleted -> CompletedTableContent(table)
+                timer.timerText != null -> RunningTableContent(table, timer.timerText)
+                else -> IdleTableContent(table)
+            }
 
             if (isEditMode) {
                 FilledIconButton(
@@ -182,6 +224,75 @@ internal fun HallTableItem(
             }
         }
     }
+}
+
+@Composable
+private fun BoxScope.IdleTableContent(table: HallTable) {
+    Text(
+        text = table.name,
+        modifier = Modifier
+            .align(Alignment.Center)
+            .padding(horizontal = 16.dp)
+            .testTag(HallTestTags.tableName(table.id)),
+        textAlign = TextAlign.Center,
+        fontWeight = FontWeight.SemiBold,
+        fontSize = 18.sp,
+        maxLines = 2,
+        overflow = TextOverflow.Ellipsis,
+    )
+}
+
+@Composable
+private fun BoxScope.RunningTableContent(table: HallTable, timerText: String) {
+    Text(
+        text = timerText,
+        modifier = Modifier
+            .align(Alignment.Center)
+            .padding(horizontal = 8.dp)
+            .testTag(HallTestTags.tableTimer(table.id)),
+        textAlign = TextAlign.Center,
+        fontWeight = FontWeight.Bold,
+        fontSize = 24.sp,
+        maxLines = 1,
+    )
+    Text(
+        text = table.name,
+        modifier = Modifier
+            .align(Alignment.BottomCenter)
+            .padding(horizontal = 12.dp, vertical = 10.dp)
+            .testTag(HallTestTags.tableName(table.id)),
+        textAlign = TextAlign.Center,
+        fontWeight = FontWeight.Medium,
+        fontSize = 13.sp,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+    )
+}
+
+@Composable
+private fun BoxScope.CompletedTableContent(table: HallTable) {
+    Text(
+        text = "×",
+        modifier = Modifier
+            .align(Alignment.Center)
+            .testTag(HallTestTags.completedMark(table.id)),
+        color = Color.Red,
+        fontWeight = FontWeight.Bold,
+        fontSize = 42.sp,
+        lineHeight = 42.sp,
+    )
+    Text(
+        text = table.name,
+        modifier = Modifier
+            .align(Alignment.BottomCenter)
+            .padding(horizontal = 12.dp, vertical = 8.dp)
+            .testTag(HallTestTags.tableName(table.id)),
+        textAlign = TextAlign.Center,
+        fontWeight = FontWeight.Medium,
+        fontSize = 13.sp,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+    )
 }
 
 private fun Modifier.offsetInPixels(position: PixelPosition): Modifier = offset {
