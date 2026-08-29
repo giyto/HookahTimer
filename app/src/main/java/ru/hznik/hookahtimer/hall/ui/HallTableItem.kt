@@ -1,6 +1,7 @@
 package ru.hznik.hookahtimer.hall.ui
 
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -23,6 +24,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -49,6 +51,7 @@ internal fun HallTableItem(
     fieldSize: IntSize,
     isEditMode: Boolean,
     onPositionChange: (String, NormalizedPosition) -> Unit,
+    onOpenSettings: () -> Unit,
     onDelete: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -85,6 +88,14 @@ internal fun HallTableItem(
     val deleteDescription = stringResource(R.string.delete_table, table.name)
     val editBorder = if (isEditMode) {
         Modifier.border(width = 3.dp, color = MaterialTheme.colorScheme.primary, shape = shape)
+    } else {
+        Modifier
+    }
+    val settingsModifier = if (isEditMode) {
+        Modifier.clickable(
+            role = Role.Button,
+            onClick = onOpenSettings,
+        )
     } else {
         Modifier
     }
@@ -127,9 +138,10 @@ internal fun HallTableItem(
     Surface(
         modifier = modifier
             .offsetInPixels(pixelPosition)
-            .then(dragModifier)
             .size(width = dimensions.width, height = dimensions.height)
             .then(editBorder)
+            .then(settingsModifier)
+            .then(dragModifier)
             .testTag(HallTestTags.table(table.id))
             .semantics { contentDescription = tableDescription },
         shape = shape,

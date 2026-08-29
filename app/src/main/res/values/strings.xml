@@ -14,4 +14,18 @@
     <string name="cancel">Отмена</string>
     <string name="circle_table_description">Круглый стол %1$s</string>
     <string name="pill_table_description">Pill-стол %1$s</string>
+    <string name="table_settings_title">Настройки: %1$s</string>
+    <string name="table_name">Название стола</string>
+    <string name="table_name_error">Введите название стола</string>
+    <string name="table_shape">Форма стола</string>
+    <string name="circle_shape">Круг</string>
+    <string name="pill_shape">Pill</string>
+    <string name="passages_title">Проходки</string>
+    <string name="passage_number">Проходка %1$d</string>
+    <string name="passage_duration">Длительность</string>
+    <string name="passage_duration_error">Укажите целое число минут больше нуля</string>
+    <string name="minutes_short">мин</string>
+    <string name="add_passage">Добавить проходку</string>
+    <string name="delete_passage">Удалить проходку %1$d</string>
+    <string name="save">Сохранить</string>
 </resources>

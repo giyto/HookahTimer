@@ -49,6 +49,7 @@ import ru.hznik.hookahtimer.ui.theme.HookahTimerTheme
 fun HallScreen(
     state: HallUiState,
     onAction: (HallAction) -> Unit,
+    onOpenSettings: (String) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val pendingDeleteTable = state.tables.firstOrNull { it.id == state.pendingDeleteTableId }
@@ -82,6 +83,7 @@ fun HallScreen(
         HallField(
             state = state,
             onAction = onAction,
+            onOpenSettings = onOpenSettings,
             modifier = Modifier
                 .fillMaxSize()
                 .padding(contentPadding)
@@ -154,6 +156,7 @@ private fun HallTopBar(
 private fun HallField(
     state: HallUiState,
     onAction: (HallAction) -> Unit,
+    onOpenSettings: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var fieldSize by remember { mutableStateOf(IntSize.Zero) }
@@ -189,6 +192,7 @@ private fun HallField(
                     onPositionChange = { tableId, position ->
                         onAction(HallAction.MoveTable(tableId, position))
                     },
+                    onOpenSettings = { onOpenSettings(table.id) },
                     onDelete = { onAction(HallAction.RequestDelete(table.id)) },
                 )
             }

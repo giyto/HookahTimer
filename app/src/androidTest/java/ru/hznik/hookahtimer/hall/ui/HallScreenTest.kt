@@ -4,6 +4,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.test.assertContentDescriptionEquals
+import androidx.compose.ui.test.assertHasNoClickAction
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.click
 import androidx.compose.ui.test.junit4.createComposeRule
@@ -164,10 +165,54 @@ class HallScreenTest {
         assertEquals(positionBeforeTap, viewModel.state.value.tables.single().position)
     }
 
-    private fun setStaticContent(state: HallUiState) {
+    @Test
+    fun settingsOpenOnlyInEditModeAndDragDoesNotOpenThem() {
+        var openCount = 0
+        setStaticContent(
+            state = HallUiState(
+                tables = listOf(HallTable(id = "table", name = "Стол")),
+                isEditMode = true,
+            ),
+            onOpenSettings = { openCount += 1 },
+        )
+
+        composeRule.onNodeWithTag(HallTestTags.table("table")).performClick()
+        assertEquals(1, openCount)
+
+        openCount = 0
+        composeRule.onNodeWithTag(HallTestTags.table("table")).performTouchInput {
+            swipe(
+                start = center,
+                end = center + Offset(300f, 200f),
+                durationMillis = 300,
+            )
+        }
+        composeRule.waitForIdle()
+        assertEquals(0, openCount)
+    }
+
+    @Test
+    fun workingModeTableHasNoSettingsClickAction() {
+        setStaticContent(
+            HallUiState(
+                tables = listOf(HallTable(id = "table", name = "Стол")),
+            ),
+        )
+
+        composeRule.onNodeWithTag(HallTestTags.table("table")).assertHasNoClickAction()
+    }
+
+    private fun setStaticContent(
+        state: HallUiState,
+        onOpenSettings: (String) -> Unit = {},
+    ) {
         composeRule.setContent {
             HookahTimerTheme {
-                HallScreen(state = state, onAction = {})
+                HallScreen(
+                    state = state,
+                    onAction = {},
+                    onOpenSettings = onOpenSettings,
+                )
             }
         }
     }

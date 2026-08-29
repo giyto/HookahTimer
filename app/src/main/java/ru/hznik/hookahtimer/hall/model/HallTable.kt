@@ -5,7 +5,16 @@ data class HallTable(
     val name: String,
     val shape: TableShape = TableShape.CIRCLE,
     val position: NormalizedPosition = NormalizedPosition.Center,
-)
+    val passages: List<TablePassage> = TablePassage.defaultList(),
+) {
+    init {
+        require(name.isNotBlank()) { "Table name must not be blank" }
+        require(passages.isNotEmpty()) { "Table must contain at least one passage" }
+        require(passages.distinctBy { it.id }.size == passages.size) {
+            "Passage ids must be unique within a table"
+        }
+    }
+}
 
 enum class TableShape {
     CIRCLE,
