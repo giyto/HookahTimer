@@ -1,6 +1,7 @@
 package ru.hznik.hookahtimer.hall.settings.ui
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -28,6 +29,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.key
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
@@ -49,6 +53,8 @@ fun TableSettingsScreen(
     modifier: Modifier = Modifier,
 ) {
     BackHandler(onBack = onCancel)
+    val focusManager = LocalFocusManager.current
+    val keyboardController = LocalSoftwareKeyboardController.current
 
     Scaffold(
         modifier = modifier.fillMaxSize(),
@@ -64,7 +70,14 @@ fun TableSettingsScreen(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(contentPadding),
+                .padding(contentPadding)
+                .pointerInput(focusManager, keyboardController) {
+                    detectTapGestures {
+                        focusManager.clearFocus()
+                        keyboardController?.hide()
+                    }
+                }
+                .testTag(TableSettingsTestTags.BACKGROUND),
             contentAlignment = Alignment.TopCenter,
         ) {
             Column(
@@ -268,6 +281,7 @@ private fun PassageEditor(
 }
 
 object TableSettingsTestTags {
+    const val BACKGROUND = "table_settings_background"
     const val NAME = "table_settings_name"
     const val CIRCLE_SHAPE = "table_settings_circle"
     const val PILL_SHAPE = "table_settings_pill"

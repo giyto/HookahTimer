@@ -2,16 +2,21 @@ package ru.hznik.hookahtimer.hall.settings.ui
 
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsFocused
 import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.assertIsNotFocused
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.assertTextContains
+import androidx.compose.ui.test.click
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextReplacement
+import androidx.compose.ui.test.performTouchInput
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -121,6 +126,19 @@ class TableSettingsScreenTest {
 
         assertTrue(cancelled)
         assertNull(viewModel.state.value.saveResult)
+    }
+
+    @Test
+    fun tappingEmptyBackgroundClearsTextFieldFocus() {
+        setViewModelContent(TableSettingsViewModel(configuredTable()))
+
+        val nameField = composeRule.onNodeWithTag(TableSettingsTestTags.NAME)
+        nameField.performClick().assertIsFocused()
+
+        composeRule.onNodeWithTag(TableSettingsTestTags.BACKGROUND)
+            .performTouchInput { click(Offset(1f, 1f)) }
+
+        nameField.assertIsNotFocused()
     }
 
     private fun setViewModelContent(
