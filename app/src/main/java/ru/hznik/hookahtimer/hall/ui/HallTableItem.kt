@@ -108,12 +108,14 @@ internal fun HallTableItem(
             R.string.overdue_table_description,
             shapeDescription,
             checkNotNull(timer.passageNumber),
+            table.passages.size,
             checkNotNull(timer.timerText),
         )
         timer.timerText != null -> stringResource(
             R.string.running_table_description,
             shapeDescription,
             checkNotNull(timer.passageNumber),
+            table.passages.size,
             timer.timerText,
         )
         else -> shapeDescription
@@ -201,7 +203,12 @@ internal fun HallTableItem(
         Box(modifier = Modifier.fillMaxSize()) {
             when {
                 timer.isCompleted -> CompletedTableContent(table)
-                timer.timerText != null -> RunningTableContent(table, timer.timerText)
+                timer.timerText != null -> RunningTableContent(
+                    table = table,
+                    timerText = timer.timerText,
+                    passageNumber = checkNotNull(timer.passageNumber),
+                    passageCount = table.passages.size,
+                )
                 else -> IdleTableContent(table)
             }
 
@@ -243,7 +250,28 @@ private fun BoxScope.IdleTableContent(table: HallTable) {
 }
 
 @Composable
-private fun BoxScope.RunningTableContent(table: HallTable, timerText: String) {
+private fun BoxScope.RunningTableContent(
+    table: HallTable,
+    timerText: String,
+    passageNumber: Int,
+    passageCount: Int,
+) {
+    Text(
+        text = stringResource(
+            R.string.table_passage_indicator,
+            passageNumber,
+            passageCount,
+        ),
+        modifier = Modifier
+            .align(Alignment.TopCenter)
+            .padding(horizontal = 12.dp, vertical = 8.dp)
+            .testTag(HallTestTags.tablePassage(table.id)),
+        textAlign = TextAlign.Center,
+        fontWeight = FontWeight.Medium,
+        fontSize = 12.sp,
+        lineHeight = 14.sp,
+        maxLines = 1,
+    )
     Text(
         text = timerText,
         modifier = Modifier

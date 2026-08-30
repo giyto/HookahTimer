@@ -1,7 +1,6 @@
 package ru.hznik.hookahtimer.hall.settings.ui
 
 import androidx.activity.compose.BackHandler
-import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -12,17 +11,16 @@ import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.relocation.BringIntoViewRequester
-import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
@@ -33,24 +31,26 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
-import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withTimeoutOrNull
 import ru.hznik.hookahtimer.R
 import ru.hznik.hookahtimer.hall.model.TableShape
 import ru.hznik.hookahtimer.hall.settings.presentation.PassageDraft
@@ -64,9 +64,14 @@ fun TableSettingsScreen(
     onCancel: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    BackHandler(onBack = onCancel)
-    val focusManager = LocalFocusManager.current
-    val keyboardController = LocalSoftwareKeyboardController.current
+    var activeEditor by remember { mutableStateOf<SettingsFieldEditor?>(null) }
+    BackHandler {
+        if (activeEditor != null) {
+            activeEditor = null
+        } else {
+            onCancel()
+        }
+    }
 
     Scaffold(
         modifier = modifier.fillMaxSize(),
@@ -84,13 +89,6 @@ fun TableSettingsScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(contentPadding)
-                .imePadding()
-                .pointerInput(focusManager, keyboardController) {
-                    detectTapGestures {
-                        focusManager.clearFocus()
-                        keyboardController?.hide()
-                    }
-                }
                 .testTag(TableSettingsTestTags.BACKGROUND),
             contentAlignment = Alignment.TopCenter,
         ) {
@@ -102,21 +100,15 @@ fun TableSettingsScreen(
                     .padding(horizontal = 24.dp, vertical = 20.dp),
                 verticalArrangement = Arrangement.spacedBy(20.dp),
             ) {
-                OutlinedTextField(
+                EditableSettingValue(
                     value = state.nameInput,
-                    onValueChange = { onAction(TableSettingsAction.ChangeName(it)) },
+                    label = stringResource(R.string.table_name),
+                    onClick = { activeEditor = SettingsFieldEditor.Name },
                     modifier = Modifier
                         .fillMaxWidth()
-                        .bringIntoViewWhenFocused()
                         .testTag(TableSettingsTestTags.NAME),
-                    label = { Text(stringResource(R.string.table_name)) },
-                    singleLine = true,
                     isError = state.nameHasError,
-                    supportingText = if (state.nameHasError) {
-                        { Text(stringResource(R.string.table_name_error)) }
-                    } else {
-                        null
-                    },
+                    errorText = stringResource(R.string.table_name_error),
                 )
 
                 ShapeSelector(
@@ -138,12 +130,10 @@ fun TableSettingsScreen(
                             passage = passage,
                             number = index + 1,
                             canDelete = state.passages.size > 1,
-                            onDurationChange = { value ->
-                                onAction(
-                                    TableSettingsAction.ChangePassageDuration(
-                                        passageId = passage.id,
-                                        value = value,
-                                    ),
+                            onEditDuration = {
+                                activeEditor = SettingsFieldEditor.PassageDuration(
+                                    passageId = passage.id,
+                                    number = index + 1,
                                 )
                             },
                             onDelete = {
@@ -165,6 +155,177 @@ fun TableSettingsScreen(
             }
         }
     }
+
+    when (val editor = activeEditor) {
+        SettingsFieldEditor.Name -> SettingsFieldEditorDialog(
+            editorKey = "name",
+            title = stringResource(R.string.table_name),
+            value = state.nameInput,
+            onValueChange = { onAction(TableSettingsAction.ChangeName(it)) },
+            keyboardType = KeyboardType.Text,
+            isError = state.nameHasError,
+            errorText = stringResource(R.string.table_name_error),
+            onDismiss = { activeEditor = null },
+        )
+
+        is SettingsFieldEditor.PassageDuration -> {
+            val passage = state.passages.firstOrNull { it.id == editor.passageId }
+            if (passage != null) {
+                SettingsFieldEditorDialog(
+                    editorKey = editor.passageId,
+                    title = stringResource(R.string.passage_number, editor.number),
+                    value = passage.durationInput,
+                    onValueChange = { value ->
+                        onAction(
+                            TableSettingsAction.ChangePassageDuration(
+                                passageId = editor.passageId,
+                                value = value,
+                            ),
+                        )
+                    },
+                    keyboardType = KeyboardType.Number,
+                    suffix = stringResource(R.string.minutes_short),
+                    isError = passage.durationHasError,
+                    errorText = stringResource(R.string.passage_duration_error),
+                    onDismiss = { activeEditor = null },
+                )
+            } else {
+                LaunchedEffect(editor) { activeEditor = null }
+            }
+        }
+
+        null -> Unit
+    }
+}
+
+@Composable
+private fun EditableSettingValue(
+    value: String,
+    label: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    suffix: String? = null,
+    isError: Boolean = false,
+    errorText: String? = null,
+) {
+    OutlinedButton(
+        onClick = onClick,
+        modifier = modifier.heightIn(min = 64.dp),
+    ) {
+        Column(
+            modifier = Modifier.fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelMedium,
+                color = if (isError) {
+                    MaterialTheme.colorScheme.error
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                },
+            )
+            Text(
+                text = listOfNotNull(value.ifEmpty { " " }, suffix).joinToString(" "),
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+            if (isError && errorText != null) {
+                Text(
+                    text = errorText,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun SettingsFieldEditorDialog(
+    editorKey: String,
+    title: String,
+    value: String,
+    onValueChange: (String) -> Unit,
+    keyboardType: KeyboardType,
+    onDismiss: () -> Unit,
+    suffix: String? = null,
+    isError: Boolean = false,
+    errorText: String? = null,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        modifier = Modifier.testTag(TableSettingsTestTags.EDITOR_DIALOG),
+        title = { Text(title) },
+        text = {
+            AutoFocusedEditorField(
+                editorKey = editorKey,
+                value = value,
+                onValueChange = onValueChange,
+                label = stringResource(R.string.passage_duration).takeIf { suffix != null } ?: title,
+                keyboardType = keyboardType,
+                suffix = suffix,
+                isError = isError,
+                errorText = errorText,
+                onDone = onDismiss,
+            )
+        },
+        confirmButton = {
+            TextButton(
+                onClick = onDismiss,
+                modifier = Modifier.testTag(TableSettingsTestTags.EDITOR_DONE),
+            ) {
+                Text(stringResource(R.string.finish_editing))
+            }
+        },
+    )
+}
+
+@Composable
+private fun AutoFocusedEditorField(
+    editorKey: String,
+    value: String,
+    onValueChange: (String) -> Unit,
+    label: String,
+    keyboardType: KeyboardType,
+    onDone: () -> Unit,
+    suffix: String? = null,
+    isError: Boolean = false,
+    errorText: String? = null,
+) {
+    val focusRequester = remember(editorKey) { FocusRequester() }
+    val keyboardController = LocalSoftwareKeyboardController.current
+
+    LaunchedEffect(editorKey) {
+        withFrameNanos { }
+        focusRequester.requestFocus()
+        keyboardController?.show()
+    }
+
+    OutlinedTextField(
+        value = value,
+        onValueChange = onValueChange,
+        modifier = Modifier
+            .fillMaxWidth()
+            .focusRequester(focusRequester)
+            .testTag(TableSettingsTestTags.EDITOR_FIELD),
+        label = { Text(label) },
+        suffix = suffix?.let { suffixText ->
+            { Text(suffixText) }
+        },
+        singleLine = true,
+        keyboardOptions = KeyboardOptions(
+            keyboardType = keyboardType,
+            imeAction = ImeAction.Done,
+        ),
+        keyboardActions = KeyboardActions(onDone = { onDone() }),
+        isError = isError,
+        supportingText = if (isError && errorText != null) {
+            { Text(errorText) }
+        } else {
+            null
+        },
+    )
 }
 
 @Composable
@@ -242,7 +403,7 @@ private fun PassageEditor(
     passage: PassageDraft,
     number: Int,
     canDelete: Boolean,
-    onDurationChange: (String) -> Unit,
+    onEditDuration: () -> Unit,
     onDelete: () -> Unit,
 ) {
     val deleteDescription = stringResource(R.string.delete_passage, number)
@@ -278,46 +439,29 @@ private fun PassageEditor(
                     Text(stringResource(R.string.delete))
                 }
             }
-            OutlinedTextField(
+            EditableSettingValue(
                 value = passage.durationInput,
-                onValueChange = onDurationChange,
+                label = stringResource(R.string.passage_duration),
+                onClick = onEditDuration,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .bringIntoViewWhenFocused()
                     .testTag(TableSettingsTestTags.passageDuration(passage.id)),
-                label = { Text(stringResource(R.string.passage_duration)) },
-                suffix = { Text(stringResource(R.string.minutes_short)) },
-                singleLine = true,
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                suffix = stringResource(R.string.minutes_short),
                 isError = passage.durationHasError,
-                supportingText = if (passage.durationHasError) {
-                    { Text(stringResource(R.string.passage_duration_error)) }
-                } else {
-                    null
-                },
+                errorText = stringResource(R.string.passage_duration_error),
             )
         }
     }
 }
 
-@Composable
-private fun Modifier.bringIntoViewWhenFocused(): Modifier {
-    val requester = remember { BringIntoViewRequester() }
-    val scope = rememberCoroutineScope()
-    return this
-        .bringIntoViewRequester(requester)
-        .onFocusChanged { focusState ->
-            if (focusState.isFocused) {
-                scope.launch {
-                    withTimeoutOrNull(BRING_INTO_VIEW_TIMEOUT_MILLIS) {
-                        requester.bringIntoView()
-                    }
-                }
-            }
-        }
-}
+private sealed interface SettingsFieldEditor {
+    data object Name : SettingsFieldEditor
 
-private const val BRING_INTO_VIEW_TIMEOUT_MILLIS = 1_000L
+    data class PassageDuration(
+        val passageId: String,
+        val number: Int,
+    ) : SettingsFieldEditor
+}
 
 object TableSettingsTestTags {
     const val BACKGROUND = "table_settings_background"
@@ -327,6 +471,9 @@ object TableSettingsTestTags {
     const val ADD_PASSAGE = "table_settings_add_passage"
     const val SAVE = "table_settings_save"
     const val CANCEL = "table_settings_cancel"
+    const val EDITOR_DIALOG = "table_settings_editor_dialog"
+    const val EDITOR_FIELD = "table_settings_editor_field"
+    const val EDITOR_DONE = "table_settings_editor_done"
 
     fun passageDuration(id: String): String = "table_settings_passage_duration_$id"
 

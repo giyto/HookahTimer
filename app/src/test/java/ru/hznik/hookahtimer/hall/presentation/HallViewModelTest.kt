@@ -10,7 +10,6 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
-import kotlinx.coroutines.runBlocking
 import ru.hznik.hookahtimer.MainDispatcherRule
 import ru.hznik.hookahtimer.hall.data.HallRepository
 import ru.hznik.hookahtimer.hall.data.InMemoryHallRepository
@@ -186,11 +185,6 @@ class HallViewModelTest {
         viewModel.onAction(HallAction.AdvanceTimer("id-2"))
         now = 10_000L
         viewModel.onAction(HallAction.AdvanceTimer("id-1"))
-        assertEquals(
-            PendingTimerConfirmation("id-1", TimerConfirmationType.ADVANCE_EARLY),
-            viewModel.state.value.pendingTimerConfirmation,
-        )
-        viewModel.onAction(HallAction.ConfirmTimerTransition)
 
         val tables = viewModel.state.value.tables
         val first = tables.single { it.id == "id-1" }
@@ -271,14 +265,9 @@ class HallViewModelTest {
         assertFalse(viewModel.state.value.isFullscreenEnabled)
     }
 
-    @Test(expected = IllegalArgumentException::class)
-    fun timerConfirmationRejectsBlankTableId() {
-        PendingTimerConfirmation(" ", TimerConfirmationType.ADVANCE_EARLY)
-    }
-
     @Test
-    fun idleAndOverdueTimersAdvanceImmediatelyButRunningTimerAsksFirst() {
-        var now = 1_000L
+    fun idleRunningAndOverdueTimersAdvanceImmediately() {
+        val now = 1_000L
         val passages = listOf(TablePassage("p1", 1), TablePassage("p2", 1))
         val repository = InMemoryHallRepository(
             initialTables = listOf(
@@ -304,18 +293,19 @@ class HallViewModelTest {
 
         viewModel.onAction(HallAction.AdvanceTimer("running"))
         assertEquals(
-            PendingTimerConfirmation("running", TimerConfirmationType.ADVANCE_EARLY),
-            viewModel.state.value.pendingTimerConfirmation,
+            TableTimerState.Running("p2", 61_000L),
+            table(viewModel, "running").timerState,
         )
-        assertEquals(TableTimerState.Running("p1", 2_000L), table(viewModel, "running").timerState)
 
-        viewModel.onAction(HallAction.CancelTimerTransition)
         viewModel.onAction(HallAction.AdvanceTimer("overdue"))
-        assertEquals("p2", (table(viewModel, "overdue").timerState as TableTimerState.Running).passageId)
+        assertEquals(
+            TableTimerState.Running("p2", 61_000L),
+            table(viewModel, "overdue").timerState,
+        )
     }
 
     @Test
-    fun earlyConfirmationUsesFreshTimeAndCancelLeavesTimerUntouched() {
+    fun runningTransitionUsesTimeOfAcceptedTap() {
         var now = 1_000L
         val passages = listOf(TablePassage("p1", 1), TablePassage("p2", 30))
         val initialTimer = TableTimerState.Running("p1", 60_000L)
@@ -331,23 +321,17 @@ class HallViewModelTest {
         )
         val viewModel = HallViewModel(repository, TimeProvider { now })
 
-        viewModel.onAction(HallAction.AdvanceTimer("table"))
-        viewModel.onAction(HallAction.CancelTimerTransition)
-        assertEquals(initialTimer, table(viewModel, "table").timerState)
-
-        viewModel.onAction(HallAction.AdvanceTimer("table"))
         now = 5_000L
-        viewModel.onAction(HallAction.ConfirmTimerTransition)
+        viewModel.onAction(HallAction.AdvanceTimer("table"))
 
         assertEquals(
             TableTimerState.Running("p2", 1_805_000L),
             table(viewModel, "table").timerState,
         )
-        assertNull(viewModel.state.value.pendingTimerConfirmation)
     }
 
     @Test
-    fun completedTableRequiresConfirmationAndResetsOnlyAfterConfirm() {
+    fun completedTableResetsImmediatelyAndLeavesOthersUntouched() {
         val other = HallTable(id = "other", name = "Другой")
         val repository = InMemoryHallRepository(
             initialTables = listOf(
@@ -362,20 +346,13 @@ class HallViewModelTest {
         val viewModel = HallViewModel(repository, TimeProvider { 1_000L })
 
         viewModel.onAction(HallAction.AdvanceTimer("completed"))
-        assertEquals(TableTimerState.Completed, table(viewModel, "completed").timerState)
-        assertEquals(
-            TimerConfirmationType.RESET_COMPLETED,
-            viewModel.state.value.pendingTimerConfirmation?.type,
-        )
-
-        viewModel.onAction(HallAction.ConfirmTimerTransition)
 
         assertEquals(TableTimerState.Idle, table(viewModel, "completed").timerState)
         assertEquals(other, table(viewModel, "other"))
     }
 
     @Test
-    fun confirmingEarlyOnLastPassageCompletesTable() {
+    fun tappingRunningLastPassageCompletesTable() {
         val passages = listOf(TablePassage("p1", 1), TablePassage("p2", 1))
         val viewModel = HallViewModel(
             repository = InMemoryHallRepository(
@@ -392,13 +369,12 @@ class HallViewModelTest {
         )
 
         viewModel.onAction(HallAction.AdvanceTimer("table"))
-        viewModel.onAction(HallAction.ConfirmTimerTransition)
 
         assertEquals(TableTimerState.Completed, table(viewModel, "table").timerState)
     }
 
     @Test
-    fun openTimerConfirmationBlocksTapsOnEveryTable() {
+    fun directTransitionsRemainIndependentAcrossTables() {
         val passages = listOf(TablePassage("p1", 1), TablePassage("p2", 1))
         val repository = InMemoryHallRepository(
             initialTables = listOf(
@@ -414,35 +390,26 @@ class HallViewModelTest {
         val viewModel = HallViewModel(repository, TimeProvider { 1_000L })
 
         viewModel.onAction(HallAction.AdvanceTimer("first"))
-        viewModel.onAction(HallAction.AdvanceTimer("first"))
         viewModel.onAction(HallAction.AdvanceTimer("second"))
 
         assertEquals(
-            PendingTimerConfirmation("first", TimerConfirmationType.ADVANCE_EARLY),
-            viewModel.state.value.pendingTimerConfirmation,
+            TableTimerState.Running("p2", 61_000L),
+            table(viewModel, "first").timerState,
         )
-        assertEquals(TableTimerState.Idle, table(viewModel, "second").timerState)
+        assertEquals(
+            TableTimerState.Running("p1", 61_000L),
+            table(viewModel, "second").timerState,
+        )
     }
 
     @Test
-    fun confirmingAfterTableWasDeletedIsSafe() {
-        val repository = InMemoryHallRepository(
-            initialTables = listOf(
-                HallTable(
-                    id = "table",
-                    name = "Стол",
-                    timerState = TableTimerState.Completed,
-                ),
-            ),
-        )
+    fun tappingMissingTableIsSafe() {
+        val repository = InMemoryHallRepository()
         val viewModel = HallViewModel(repository, TimeProvider { 1_000L })
-        viewModel.onAction(HallAction.AdvanceTimer("table"))
-        runBlocking { repository.deleteTable("table") }
 
-        viewModel.onAction(HallAction.ConfirmTimerTransition)
+        viewModel.onAction(HallAction.AdvanceTimer("missing"))
 
         assertTrue(viewModel.state.value.tables.isEmpty())
-        assertNull(viewModel.state.value.pendingTimerConfirmation)
     }
 
     private fun table(viewModel: HallViewModel, id: String): HallTable =

@@ -37,9 +37,6 @@ import ru.hznik.hookahtimer.hall.model.TimeProvider
 import ru.hznik.hookahtimer.hall.presentation.HallAction
 import ru.hznik.hookahtimer.hall.presentation.HallUiState
 import ru.hznik.hookahtimer.hall.presentation.HallViewModel
-import ru.hznik.hookahtimer.hall.presentation.PendingTimerConfirmation
-import ru.hznik.hookahtimer.hall.presentation.TimerConfirmationType
-import ru.hznik.hookahtimer.test.dispatchActivityBack
 import ru.hznik.hookahtimer.ui.theme.HookahTimerTheme
 
 class HallScreenTest {
@@ -288,6 +285,12 @@ class HallScreenTest {
                         timerState = TableTimerState.Running("p2", 60_001L),
                     ),
                     HallTable(
+                        id = "idle",
+                        name = "Свободен",
+                        position = NormalizedPosition.of(0.15f, 0.8f),
+                        passages = passages,
+                    ),
+                    HallTable(
                         id = "completed",
                         name = "Готов",
                         position = NormalizedPosition.of(0.85f, 0.8f),
@@ -310,18 +313,54 @@ class HallScreenTest {
         )
             .assertTextEquals("-01:00")
         composeRule.onNodeWithTag(
+            HallTestTags.tablePassage("running"),
+            useUnmergedTree = true,
+        )
+            .assertTextEquals("1/2")
+        composeRule.onNodeWithTag(
+            HallTestTags.tablePassage("overdue"),
+            useUnmergedTree = true,
+        )
+            .assertTextEquals("2/2")
+        composeRule.onNodeWithTag(
+            HallTestTags.tablePassage("idle"),
+            useUnmergedTree = true,
+        )
+            .assertDoesNotExist()
+        composeRule.onNodeWithTag(
+            HallTestTags.tablePassage("completed"),
+            useUnmergedTree = true,
+        )
+            .assertDoesNotExist()
+        composeRule.onNodeWithTag(
             HallTestTags.completedMark("completed"),
             useUnmergedTree = true,
         )
             .assertTextEquals("×")
+        composeRule.onNodeWithTag(HallTestTags.table("running"))
+            .assertContentDescriptionEquals(
+                "Pill-стол Работает, проходка 1 из 2, осталось 00:30",
+            )
         composeRule.onNodeWithTag(HallTestTags.table("overdue"))
             .assertContentDescriptionEquals(
-                "Круглый стол Просрочен, проходка 2, просрочка -01:00",
+                "Круглый стол Просрочен, проходка 2 из 2, просрочка -01:00",
             )
         composeRule.onNodeWithTag(HallTestTags.table("completed"))
             .assertContentDescriptionEquals(
                 "Круглый стол Готов, обслуживание завершено",
             )
+        listOf("running", "overdue").forEach { id ->
+            val tableBounds = composeRule.onNodeWithTag(HallTestTags.table(id))
+                .fetchSemanticsNode().boundsInRoot
+            val passageBounds = composeRule.onNodeWithTag(
+                HallTestTags.tablePassage(id),
+                useUnmergedTree = true,
+            ).fetchSemanticsNode().boundsInRoot
+            assertTrue(passageBounds.left >= tableBounds.left)
+            assertTrue(passageBounds.top >= tableBounds.top)
+            assertTrue(passageBounds.right <= tableBounds.right)
+            assertTrue(passageBounds.bottom <= tableBounds.bottom)
+        }
     }
 
     @Test
@@ -363,7 +402,7 @@ class HallScreenTest {
     }
 
     @Test
-    fun twoPassageCycleRequiresSeparateTapForReset() {
+    fun twoPassageCycleAdvancesAndResetsWithOneTapPerStage() {
         val viewModel = setViewModelContent()
         composeRule.onNodeWithTag(HallTestTags.TOGGLE_EDIT_MODE).performClick()
         composeRule.onNodeWithTag(HallTestTags.ADD_TABLE).performClick()
@@ -376,104 +415,39 @@ class HallScreenTest {
             viewModel.state.value.tables.single().passages[0].id,
             (viewModel.state.value.tables.single().timerState as TableTimerState.Running).passageId,
         )
+        composeRule.onNodeWithTag(
+            HallTestTags.tablePassage("id-1"),
+            useUnmergedTree = true,
+        ).assertTextEquals("1/2")
 
         tableNode.performClick()
-        composeRule.onNodeWithText("Завершить проходку раньше?").assertIsDisplayed()
-        composeRule.onNodeWithTag(HallTestTags.CONFIRM_TIMER_TRANSITION).performClick()
+        composeRule.onNodeWithText("Завершить проходку раньше?").assertDoesNotExist()
         assertEquals(
             viewModel.state.value.tables.single().passages[1].id,
             (viewModel.state.value.tables.single().timerState as TableTimerState.Running).passageId,
         )
+        composeRule.onNodeWithTag(
+            HallTestTags.tablePassage("id-1"),
+            useUnmergedTree = true,
+        ).assertTextEquals("2/2")
 
         tableNode.performClick()
-        composeRule.onNodeWithText("Завершить проходку раньше?").assertIsDisplayed()
-        composeRule.onNodeWithTag(HallTestTags.CONFIRM_TIMER_TRANSITION).performClick()
+        composeRule.onNodeWithText("Завершить проходку раньше?").assertDoesNotExist()
         assertEquals(TableTimerState.Completed, viewModel.state.value.tables.single().timerState)
         composeRule.onNodeWithTag(
             HallTestTags.completedMark("id-1"),
             useUnmergedTree = true,
         ).assertIsDisplayed()
+        composeRule.onNodeWithTag(
+            HallTestTags.tablePassage("id-1"),
+            useUnmergedTree = true,
+        ).assertDoesNotExist()
 
         tableNode.performClick()
-        composeRule.onNodeWithText("Сбросить стол?").assertIsDisplayed()
-        composeRule.onNodeWithTag(HallTestTags.CONFIRM_TIMER_TRANSITION).performClick()
+        composeRule.onNodeWithText("Сбросить стол?").assertDoesNotExist()
         assertEquals(TableTimerState.Idle, viewModel.state.value.tables.single().timerState)
         composeRule.onNodeWithTag(HallTestTags.TOGGLE_EDIT_MODE).performClick()
         tableNode.assertHasClickAction()
-    }
-
-    @Test
-    fun timerConfirmationCanBeCancelledAndShowsOnlySelectedTable() {
-        val table = HallTable(
-            id = "table",
-            name = "VIP",
-            timerState = TableTimerState.Completed,
-        )
-        var action: HallAction? = null
-        setStaticContent(
-            state = HallUiState(
-                tables = listOf(table),
-                pendingTimerConfirmation = PendingTimerConfirmation(
-                    tableId = table.id,
-                    type = TimerConfirmationType.RESET_COMPLETED,
-                ),
-            ),
-            onAction = { action = it },
-        )
-
-        composeRule.onNodeWithText("Сбросить стол?").assertIsDisplayed()
-        composeRule.onNodeWithText("Вернуть стол «VIP» в начальное состояние?")
-            .assertIsDisplayed()
-        composeRule.onNodeWithTag(HallTestTags.CANCEL_TIMER_TRANSITION).performClick()
-
-        assertEquals(HallAction.CancelTimerTransition, action)
-    }
-
-    @Test
-    fun systemBackCancelsTimerConfirmation() {
-        var action: HallAction? = null
-        setStaticContent(
-            state = HallUiState(
-                tables = listOf(
-                    HallTable(
-                        id = "completed",
-                        name = "Готов",
-                        timerState = TableTimerState.Completed,
-                    ),
-                ),
-                pendingTimerConfirmation = PendingTimerConfirmation(
-                    tableId = "completed",
-                    type = TimerConfirmationType.RESET_COMPLETED,
-                ),
-            ),
-            onAction = { action = it },
-        )
-
-        composeRule.onNodeWithText("Сбросить стол?").assertIsDisplayed()
-        dispatchActivityBack()
-        composeRule.waitForIdle()
-
-        assertEquals(HallAction.CancelTimerTransition, action)
-    }
-
-    @Test
-    fun missingPendingTableIsSafelyCancelled() {
-        var action: HallAction? = null
-        setStaticContent(
-            state = HallUiState(
-                pendingTimerConfirmation = PendingTimerConfirmation(
-                    tableId = "deleted",
-                    type = TimerConfirmationType.ADVANCE_EARLY,
-                ),
-            ),
-            onAction = { action = it },
-        )
-
-        composeRule.waitForIdle()
-
-        assertEquals(HallAction.CancelTimerTransition, action)
-        composeRule.onNodeWithTag(HallTestTags.CONFIRM_TIMER_TRANSITION)
-            .assertDoesNotExist()
     }
 
     @Test

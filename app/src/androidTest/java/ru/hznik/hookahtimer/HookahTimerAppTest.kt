@@ -6,6 +6,7 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextReplacement
 import org.junit.Assert.assertEquals
 import org.junit.Rule
@@ -46,12 +47,10 @@ class HookahTimerAppTest {
         setAppContent(viewModel)
 
         composeRule.onNodeWithTag(HallTestTags.table("table-1")).performClick()
-        composeRule.onNodeWithTag(TableSettingsTestTags.NAME).performTextReplacement("VIP")
+        editSettingValue(TableSettingsTestTags.NAME, "VIP")
         composeRule.onNodeWithTag(TableSettingsTestTags.PILL_SHAPE).performClick()
-        composeRule.onNodeWithTag(TableSettingsTestTags.passageDuration("passage-1"))
-            .performTextReplacement("15")
-        composeRule.onNodeWithTag(TableSettingsTestTags.passageDuration("passage-2"))
-            .performTextReplacement("45")
+        editSettingValue(TableSettingsTestTags.passageDuration("passage-1"), "15")
+        editSettingValue(TableSettingsTestTags.passageDuration("passage-2"), "45")
         composeRule.onNodeWithTag(TableSettingsTestTags.SAVE).performClick()
 
         composeRule.onNodeWithText("VIP").assertIsDisplayed()
@@ -70,8 +69,7 @@ class HookahTimerAppTest {
         val original = viewModel.state.value.tables.single()
 
         composeRule.onNodeWithTag(HallTestTags.table("table-1")).performClick()
-        composeRule.onNodeWithTag(TableSettingsTestTags.NAME)
-            .performTextReplacement("Не сохранять")
+        editSettingValue(TableSettingsTestTags.NAME, "Не сохранять")
         composeRule.onNodeWithTag(TableSettingsTestTags.CANCEL).performClick()
 
         composeRule.onNodeWithText("Стол 1").assertIsDisplayed()
@@ -86,8 +84,7 @@ class HookahTimerAppTest {
         val original = viewModel.state.value.tables.single()
 
         composeRule.onNodeWithTag(HallTestTags.table("table-1")).performClick()
-        composeRule.onNodeWithTag(TableSettingsTestTags.NAME)
-            .performTextReplacement("Не сохранять")
+        editSettingValue(TableSettingsTestTags.NAME, "Не сохранять")
         dispatchActivityBack()
 
         composeRule.onNodeWithText("Стол 1").assertIsDisplayed()
@@ -160,6 +157,16 @@ class HookahTimerAppTest {
         TablePassage("passage-1", 30),
         TablePassage("passage-2", 30),
     )
+
+    private fun editSettingValue(triggerTag: String, value: String) {
+        composeRule.onNodeWithTag(triggerTag)
+            .performScrollTo()
+            .performClick()
+        composeRule.onNodeWithTag(TableSettingsTestTags.EDITOR_FIELD)
+            .assertIsDisplayed()
+            .performTextReplacement(value)
+        composeRule.onNodeWithTag(TableSettingsTestTags.EDITOR_DONE).performClick()
+    }
 
     private fun setAppContent(
         viewModel: HallViewModel,

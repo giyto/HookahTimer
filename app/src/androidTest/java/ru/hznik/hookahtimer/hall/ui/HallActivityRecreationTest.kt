@@ -9,8 +9,8 @@ import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
-import androidx.compose.ui.test.onFirst
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextReplacement
 import androidx.lifecycle.Lifecycle
 import androidx.test.platform.app.InstrumentationRegistry
@@ -61,17 +61,21 @@ class HallActivityRecreationTest {
         composeRule.onNodeWithTag(HallTestTags.TOGGLE_EDIT_MODE).performClick()
         composeRule.onNodeWithTag(HallTestTags.ADD_TABLE).performClick()
         waitForText("Стол 1")
+        val firstPassageId = findFirstPassageId()
         composeRule.onNodeWithText("Стол 1").performClick()
-        composeRule.onNodeWithTag(TableSettingsTestTags.NAME)
-            .performTextReplacement("Черновик")
+        editSettingValue(TableSettingsTestTags.NAME, "Черновик")
         composeRule.onNodeWithTag(TableSettingsTestTags.PILL_SHAPE).performClick()
-        composeRule.onAllNodesWithText("30").onFirst().performTextReplacement("45")
+        editSettingValue(
+            TableSettingsTestTags.passageDuration(firstPassageId),
+            "45",
+        )
 
         composeRule.activityRule.scenario.recreate()
 
         composeRule.onNodeWithTag(TableSettingsTestTags.NAME).assertTextContains("Черновик")
         composeRule.onNodeWithTag(TableSettingsTestTags.PILL_SHAPE).assertIsSelected()
-        composeRule.onNodeWithText("45").assertExists()
+        composeRule.onNodeWithTag(TableSettingsTestTags.passageDuration(firstPassageId))
+            .assertTextContains("45 мин")
     }
 
     @Test
@@ -182,6 +186,23 @@ class HallActivityRecreationTest {
         return runBlocking {
             application.hallRepository.tables.first().single().id
         }
+    }
+
+    private fun findFirstPassageId(): String {
+        val application = composeRule.activity.application as HookahTimerApplication
+        return runBlocking {
+            application.hallRepository.tables.first().single().passages.first().id
+        }
+    }
+
+    private fun editSettingValue(triggerTag: String, value: String) {
+        composeRule.onNodeWithTag(triggerTag)
+            .performScrollTo()
+            .performClick()
+        composeRule.onNodeWithTag(TableSettingsTestTags.EDITOR_FIELD)
+            .assertIsDisplayed()
+            .performTextReplacement(value)
+        composeRule.onNodeWithTag(TableSettingsTestTags.EDITOR_DONE).performClick()
     }
 
     private fun waitForUniqueTableNodes(tableIds: List<String>) {

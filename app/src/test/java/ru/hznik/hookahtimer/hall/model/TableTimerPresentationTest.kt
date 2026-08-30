@@ -52,6 +52,31 @@ class TableTimerPresentationTest {
         assertEquals(null, completed.timerPresentation(0L).timerText)
     }
 
+    @Test
+    fun passageNumberTracksFirstMiddleAndLastConfiguredPassage() {
+        val passages = listOf(
+            TablePassage("first", 10),
+            TablePassage("middle", 20),
+            TablePassage("last", 30),
+        )
+        val table = HallTable(
+            id = "table",
+            name = "Стол",
+            passages = passages,
+        )
+
+        passages.forEachIndexed { index, passage ->
+            val running = table.copy(
+                timerState = TableTimerState.Running(
+                    passageId = passage.id,
+                    endsAtEpochMillis = 60_000L,
+                ),
+            )
+
+            assertEquals(index + 1, running.timerPresentation(0L).passageNumber)
+        }
+    }
+
     private fun runningTable(endsAt: Long): HallTable = HallTable(
         id = "table",
         name = "Стол",

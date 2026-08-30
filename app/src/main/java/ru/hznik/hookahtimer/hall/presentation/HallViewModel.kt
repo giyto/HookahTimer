@@ -8,7 +8,6 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -39,7 +38,6 @@ class HallViewModel(
             isEditMode = editor.isEditMode,
             isFullscreenEnabled = editor.isFullscreenEnabled,
             pendingDeleteTableId = editor.pendingDeleteTableId,
-            pendingTimerConfirmation = editor.pendingTimerConfirmation,
         )
     }.stateIn(
         scope = viewModelScope,
@@ -56,8 +54,6 @@ class HallViewModel(
             is HallAction.RequestDelete -> requestDelete(action.tableId)
             is HallAction.UpdateTableSettings -> updateTableSettings(action)
             is HallAction.AdvanceTimer -> advanceTimer(action.tableId)
-            HallAction.ConfirmTimerTransition -> confirmTimerTransition()
-            HallAction.CancelTimerTransition -> cancelTimerTransition()
             HallAction.ConfirmDelete -> confirmDelete()
             HallAction.CancelDelete -> cancelDelete()
         }
@@ -68,7 +64,6 @@ class HallViewModel(
             current.copy(
                 isEditMode = !current.isEditMode,
                 pendingDeleteTableId = null,
-                pendingTimerConfirmation = null,
             )
         }
     }
@@ -130,80 +125,15 @@ class HallViewModel(
 
     private fun advanceTimer(tableId: String) {
         val editor = editorState.value
-        val table = state.value.tables.firstOrNull { it.id == tableId }
-        if (editor.isEditMode || editor.pendingTimerConfirmation != null || table == null) return
+        if (editor.isEditMode || state.value.tables.none { it.id == tableId }) return
 
         val nowEpochMillis = timeProvider.nowEpochMillis()
-        when (val timerState = table.timerState) {
-            TableTimerState.Idle -> advanceTimerImmediately(tableId, nowEpochMillis)
-            is TableTimerState.Running -> {
-                if (nowEpochMillis >= timerState.endsAtEpochMillis) {
-                    advanceTimerImmediately(tableId, nowEpochMillis)
-                } else {
-                    requestTimerConfirmation(
-                        tableId = tableId,
-                        type = TimerConfirmationType.ADVANCE_EARLY,
-                    )
-                }
-            }
-
-            TableTimerState.Completed -> requestTimerConfirmation(
-                tableId = tableId,
-                type = TimerConfirmationType.RESET_COMPLETED,
-            )
-        }
+        advanceTimerImmediately(tableId, nowEpochMillis)
     }
 
     private fun advanceTimerImmediately(tableId: String, nowEpochMillis: Long) {
         launchTableCommand(tableId) {
             repository.advanceTimer(tableId, nowEpochMillis)
-        }
-    }
-
-    private fun requestTimerConfirmation(
-        tableId: String,
-        type: TimerConfirmationType,
-    ) {
-        editorState.update { current ->
-            if (current.pendingTimerConfirmation != null) {
-                current
-            } else {
-                current.copy(
-                    pendingTimerConfirmation = PendingTimerConfirmation(tableId, type),
-                )
-            }
-        }
-    }
-
-    private fun confirmTimerTransition() {
-        val pending = editorState.value.pendingTimerConfirmation ?: return
-        editorState.update { current -> current.copy(pendingTimerConfirmation = null) }
-        launchTableCommand(pending.tableId) {
-            val table = repository.tables.first().firstOrNull { it.id == pending.tableId }
-                ?: return@launchTableCommand
-            val isStillApplicable = when (pending.type) {
-                TimerConfirmationType.ADVANCE_EARLY ->
-                    table.timerState is TableTimerState.Running
-
-                TimerConfirmationType.RESET_COMPLETED ->
-                    table.timerState == TableTimerState.Completed
-            }
-            if (isStillApplicable) {
-                repository.advanceTimer(
-                    tableId = pending.tableId,
-                    nowEpochMillis = timeProvider.nowEpochMillis(),
-                )
-            }
-        }
-    }
-
-    private fun cancelTimerTransition() {
-        editorState.update { current ->
-            if (current.pendingTimerConfirmation == null) {
-                current
-            } else {
-                current.copy(pendingTimerConfirmation = null)
-            }
         }
     }
 
@@ -247,7 +177,6 @@ class HallViewModel(
         val isEditMode: Boolean = false,
         val isFullscreenEnabled: Boolean = false,
         val pendingDeleteTableId: String? = null,
-        val pendingTimerConfirmation: PendingTimerConfirmation? = null,
     )
 
     companion object {

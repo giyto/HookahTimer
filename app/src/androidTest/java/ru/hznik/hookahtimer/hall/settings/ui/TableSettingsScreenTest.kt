@@ -2,21 +2,17 @@ package ru.hznik.hookahtimer.hall.settings.ui
 
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsFocused
 import androidx.compose.ui.test.assertIsNotEnabled
-import androidx.compose.ui.test.assertIsNotFocused
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.assertTextContains
-import androidx.compose.ui.test.click
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextReplacement
-import androidx.compose.ui.test.performTouchInput
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -41,7 +37,7 @@ class TableSettingsScreenTest {
         composeRule.onNodeWithText("Проходка 1").assertIsDisplayed()
         composeRule.onNodeWithText("Проходка 2").assertIsDisplayed()
         composeRule.onNodeWithTag(TableSettingsTestTags.passageDuration("passage-1"))
-            .assertTextContains("20")
+            .assertTextContains("20 мин")
     }
 
     @Test
@@ -84,9 +80,8 @@ class TableSettingsScreenTest {
         val viewModel = TableSettingsViewModel(configuredTable())
         setViewModelContent(viewModel)
 
-        composeRule.onNodeWithTag(TableSettingsTestTags.NAME).performTextReplacement("   ")
-        composeRule.onNodeWithTag(TableSettingsTestTags.passageDuration("passage-1"))
-            .performTextReplacement("0")
+        editField(TableSettingsTestTags.NAME, "   ")
+        editField(TableSettingsTestTags.passageDuration("passage-1"), "0")
         composeRule.onNodeWithTag(TableSettingsTestTags.SAVE).performClick()
 
         composeRule.onNodeWithText("Введите название стола").assertIsDisplayed()
@@ -99,13 +94,10 @@ class TableSettingsScreenTest {
         val viewModel = TableSettingsViewModel(configuredTable())
         setViewModelContent(viewModel)
 
-        composeRule.onNodeWithTag(TableSettingsTestTags.NAME)
-            .performTextReplacement("  Терраса  ")
+        editField(TableSettingsTestTags.NAME, "  Терраса  ")
         composeRule.onNodeWithTag(TableSettingsTestTags.CIRCLE_SHAPE).performClick()
-        composeRule.onNodeWithTag(TableSettingsTestTags.passageDuration("passage-1"))
-            .performTextReplacement("15")
-        composeRule.onNodeWithTag(TableSettingsTestTags.passageDuration("passage-2"))
-            .performTextReplacement("45")
+        editField(TableSettingsTestTags.passageDuration("passage-1"), "15")
+        editField(TableSettingsTestTags.passageDuration("passage-2"), "45")
         composeRule.onNodeWithTag(TableSettingsTestTags.SAVE).performClick()
 
         val result = requireNotNull(viewModel.state.value.saveResult)
@@ -120,8 +112,7 @@ class TableSettingsScreenTest {
         var cancelled = false
         setViewModelContent(viewModel, onCancel = { cancelled = true })
 
-        composeRule.onNodeWithTag(TableSettingsTestTags.NAME)
-            .performTextReplacement("Изменение")
+        editField(TableSettingsTestTags.NAME, "Изменение")
         composeRule.onNodeWithTag(TableSettingsTestTags.CANCEL).performClick()
 
         assertTrue(cancelled)
@@ -129,16 +120,45 @@ class TableSettingsScreenTest {
     }
 
     @Test
-    fun tappingEmptyBackgroundClearsTextFieldFocus() {
+    fun nameIsEditedInDedicatedDialog() {
         setViewModelContent(TableSettingsViewModel(configuredTable()))
 
-        val nameField = composeRule.onNodeWithTag(TableSettingsTestTags.NAME)
-        nameField.performClick().assertIsFocused()
+        val nameValue = composeRule.onNodeWithTag(TableSettingsTestTags.NAME)
+        nameValue.performClick()
 
-        composeRule.onNodeWithTag(TableSettingsTestTags.BACKGROUND)
-            .performTouchInput { click(Offset(1f, 1f)) }
+        composeRule.onNodeWithTag(TableSettingsTestTags.EDITOR_DIALOG).assertIsDisplayed()
+        val editorField = composeRule.onNodeWithTag(TableSettingsTestTags.EDITOR_FIELD)
+        editorField.assertIsDisplayed()
+        waitForEditorFocus()
+        editorField
+            .assertIsFocused()
+            .assertTextContains("VIP")
+            .performTextReplacement("Терраса")
+        composeRule.onNodeWithTag(TableSettingsTestTags.EDITOR_DONE).performClick()
 
-        nameField.assertIsNotFocused()
+        composeRule.onNodeWithTag(TableSettingsTestTags.EDITOR_DIALOG).assertDoesNotExist()
+        nameValue.assertIsDisplayed().assertTextContains("Терраса")
+    }
+
+    @Test
+    fun durationIsEditedInDedicatedDialog() {
+        setViewModelContent(TableSettingsViewModel(configuredTable()))
+
+        composeRule.onNodeWithTag(TableSettingsTestTags.passageDuration("passage-1"))
+            .performScrollTo()
+            .performClick()
+
+        val editorField = composeRule.onNodeWithTag(TableSettingsTestTags.EDITOR_FIELD)
+        editorField.assertIsDisplayed()
+        waitForEditorFocus()
+        editorField
+            .assertIsFocused()
+            .assertTextContains("20", substring = true)
+            .performTextReplacement("25")
+        composeRule.onNodeWithTag(TableSettingsTestTags.EDITOR_DONE).performClick()
+
+        composeRule.onNodeWithTag(TableSettingsTestTags.passageDuration("passage-1"))
+            .assertTextContains("25 мин")
     }
 
     @Test
@@ -150,16 +170,29 @@ class TableSettingsScreenTest {
         )
         setViewModelContent(TableSettingsViewModel(table))
 
-        composeRule.onNodeWithTag(TableSettingsTestTags.NAME)
-            .performClick()
-            .performTextReplacement("Большой зал")
-        composeRule.onNodeWithTag(TableSettingsTestTags.passageDuration("passage-8"))
-            .performScrollTo()
-            .performClick()
-            .performTextReplacement("45")
+        editField(TableSettingsTestTags.NAME, "Большой зал")
+        editField(TableSettingsTestTags.passageDuration("passage-8"), "45")
 
         composeRule.onNodeWithTag(TableSettingsTestTags.SAVE).assertIsDisplayed()
         composeRule.onNodeWithTag(TableSettingsTestTags.CANCEL).assertIsDisplayed()
+    }
+
+    private fun editField(triggerTag: String, value: String) {
+        composeRule.onNodeWithTag(triggerTag)
+            .performScrollTo()
+            .performClick()
+        val editorField = composeRule.onNodeWithTag(TableSettingsTestTags.EDITOR_FIELD)
+        editorField.assertIsDisplayed()
+        waitForEditorFocus()
+        editorField.performTextReplacement(value)
+        composeRule.onNodeWithTag(TableSettingsTestTags.EDITOR_DONE).performClick()
+    }
+
+    private fun waitForEditorFocus() {
+        val editorField = composeRule.onNodeWithTag(TableSettingsTestTags.EDITOR_FIELD)
+        composeRule.waitUntil(timeoutMillis = 5_000L) {
+            runCatching { editorField.assertIsFocused() }.isSuccess
+        }
     }
 
     private fun setViewModelContent(

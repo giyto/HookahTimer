@@ -1,6 +1,5 @@
 package ru.hznik.hookahtimer.hall.ui
 
-import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -58,8 +57,6 @@ import ru.hznik.hookahtimer.hall.model.SystemTimeProvider
 import ru.hznik.hookahtimer.hall.model.TimeProvider
 import ru.hznik.hookahtimer.hall.presentation.HallAction
 import ru.hznik.hookahtimer.hall.presentation.HallUiState
-import ru.hznik.hookahtimer.hall.presentation.PendingTimerConfirmation
-import ru.hznik.hookahtimer.hall.presentation.TimerConfirmationType
 import ru.hznik.hookahtimer.ui.theme.HookahTimerTheme
 
 @Composable
@@ -71,15 +68,8 @@ fun HallScreen(
     timeProvider: TimeProvider = SystemTimeProvider,
 ) {
     val pendingDeleteTable = state.tables.firstOrNull { it.id == state.pendingDeleteTableId }
-    val pendingTimerTable = state.pendingTimerConfirmation?.let { pending ->
-        state.tables.firstOrNull { it.id == pending.tableId }
-    }
     val addTableDescription = stringResource(R.string.add_table)
     val nowEpochMillis = rememberCurrentEpochMillis(timeProvider)
-
-    BackHandler(enabled = pendingTimerTable != null) {
-        onAction(HallAction.CancelTimerTransition)
-    }
 
     Scaffold(
         modifier = modifier.fillMaxSize(),
@@ -147,20 +137,6 @@ fun HallScreen(
         )
     }
 
-    if (state.pendingTimerConfirmation != null && pendingTimerTable == null) {
-        LaunchedEffect(state.pendingTimerConfirmation) {
-            onAction(HallAction.CancelTimerTransition)
-        }
-    }
-
-    if (pendingTimerTable != null) {
-        TimerConfirmationDialog(
-            tableName = pendingTimerTable.name,
-            confirmation = requireNotNull(state.pendingTimerConfirmation),
-            onConfirm = { onAction(HallAction.ConfirmTimerTransition) },
-            onCancel = { onAction(HallAction.CancelTimerTransition) },
-        )
-    }
 }
 
 @Composable
@@ -251,62 +227,6 @@ private fun HallTitle() {
         text = stringResource(R.string.hall_title),
         style = MaterialTheme.typography.headlineMedium,
         fontWeight = FontWeight.SemiBold,
-    )
-}
-
-@Composable
-private fun TimerConfirmationDialog(
-    tableName: String,
-    confirmation: PendingTimerConfirmation,
-    onConfirm: () -> Unit,
-    onCancel: () -> Unit,
-) {
-    val isEarlyAdvance = confirmation.type == TimerConfirmationType.ADVANCE_EARLY
-    AlertDialog(
-        onDismissRequest = onCancel,
-        title = {
-            Text(
-                stringResource(
-                    if (isEarlyAdvance) {
-                        R.string.advance_timer_early_title
-                    } else {
-                        R.string.reset_completed_table_title
-                    },
-                ),
-            )
-        },
-        text = {
-            Text(
-                stringResource(
-                    if (isEarlyAdvance) {
-                        R.string.advance_timer_early_message
-                    } else {
-                        R.string.reset_completed_table_message
-                    },
-                    tableName,
-                ),
-            )
-        },
-        confirmButton = {
-            Button(
-                onClick = onConfirm,
-                modifier = Modifier.testTag(HallTestTags.CONFIRM_TIMER_TRANSITION),
-            ) {
-                Text(
-                    stringResource(
-                        if (isEarlyAdvance) R.string.advance else R.string.reset,
-                    ),
-                )
-            }
-        },
-        dismissButton = {
-            TextButton(
-                onClick = onCancel,
-                modifier = Modifier.testTag(HallTestTags.CANCEL_TIMER_TRANSITION),
-            ) {
-                Text(stringResource(R.string.cancel))
-            }
-        },
     )
 }
 
@@ -432,8 +352,6 @@ object HallTestTags {
     const val ADD_TABLE = "add_table"
     const val CONFIRM_DELETE = "confirm_delete"
     const val CANCEL_DELETE = "cancel_delete"
-    const val CONFIRM_TIMER_TRANSITION = "confirm_timer_transition"
-    const val CANCEL_TIMER_TRANSITION = "cancel_timer_transition"
 
     fun table(id: String): String = "table_$id"
 
@@ -442,6 +360,8 @@ object HallTestTags {
     fun tableName(id: String): String = "table_name_$id"
 
     fun tableTimer(id: String): String = "table_timer_$id"
+
+    fun tablePassage(id: String): String = "table_passage_$id"
 
     fun completedMark(id: String): String = "completed_mark_$id"
 }
