@@ -7,11 +7,13 @@ import androidx.activity.enableEdgeToEdge
 import androidx.lifecycle.viewmodel.compose.viewModel
 import ru.hznik.hookahtimer.hall.presentation.HallViewModel
 import ru.hznik.hookahtimer.ui.theme.HookahTimerTheme
+import ru.hznik.hookahtimer.window.AndroidTabletWindowController
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        val tabletWindowController = AndroidTabletWindowController(window)
         setContent {
             HookahTimerTheme {
                 val hallViewModel: HallViewModel = viewModel(
@@ -19,7 +21,10 @@ class MainActivity : ComponentActivity() {
                         repository = (application as HookahTimerApplication).hallRepository,
                     ),
                 )
-                HookahTimerApp(hallViewModel = hallViewModel)
+                HookahTimerApp(
+                    hallViewModel = hallViewModel,
+                    tabletWindowController = tabletWindowController,
+                )
             }
         }
     }

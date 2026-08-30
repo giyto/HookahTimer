@@ -141,6 +141,27 @@ class TableSettingsScreenTest {
         nameField.assertIsNotFocused()
     }
 
+    @Test
+    fun firstAndLastFieldsCanBeEditedWhileTopBarActionsStayAvailable() {
+        val table = configuredTable().copy(
+            passages = List(8) { index ->
+                TablePassage(id = "passage-${index + 1}", durationMinutes = 30)
+            },
+        )
+        setViewModelContent(TableSettingsViewModel(table))
+
+        composeRule.onNodeWithTag(TableSettingsTestTags.NAME)
+            .performClick()
+            .performTextReplacement("Большой зал")
+        composeRule.onNodeWithTag(TableSettingsTestTags.passageDuration("passage-8"))
+            .performScrollTo()
+            .performClick()
+            .performTextReplacement("45")
+
+        composeRule.onNodeWithTag(TableSettingsTestTags.SAVE).assertIsDisplayed()
+        composeRule.onNodeWithTag(TableSettingsTestTags.CANCEL).assertIsDisplayed()
+    }
+
     private fun setViewModelContent(
         viewModel: TableSettingsViewModel,
         onCancel: () -> Unit = {},

@@ -1,16 +1,22 @@
 package ru.hznik.hookahtimer.hall.ui
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -52,6 +58,8 @@ import ru.hznik.hookahtimer.hall.model.SystemTimeProvider
 import ru.hznik.hookahtimer.hall.model.TimeProvider
 import ru.hznik.hookahtimer.hall.presentation.HallAction
 import ru.hznik.hookahtimer.hall.presentation.HallUiState
+import ru.hznik.hookahtimer.hall.presentation.PendingTimerConfirmation
+import ru.hznik.hookahtimer.hall.presentation.TimerConfirmationType
 import ru.hznik.hookahtimer.ui.theme.HookahTimerTheme
 
 @Composable
@@ -63,15 +71,24 @@ fun HallScreen(
     timeProvider: TimeProvider = SystemTimeProvider,
 ) {
     val pendingDeleteTable = state.tables.firstOrNull { it.id == state.pendingDeleteTableId }
+    val pendingTimerTable = state.pendingTimerConfirmation?.let { pending ->
+        state.tables.firstOrNull { it.id == pending.tableId }
+    }
     val addTableDescription = stringResource(R.string.add_table)
     val nowEpochMillis = rememberCurrentEpochMillis(timeProvider)
+
+    BackHandler(enabled = pendingTimerTable != null) {
+        onAction(HallAction.CancelTimerTransition)
+    }
 
     Scaffold(
         modifier = modifier.fillMaxSize(),
         topBar = {
             HallTopBar(
                 isEditMode = state.isEditMode,
+                isFullscreenEnabled = state.isFullscreenEnabled,
                 onToggleEditMode = { onAction(HallAction.ToggleEditMode) },
+                onToggleFullscreen = { onAction(HallAction.ToggleFullscreen) },
             )
         },
         floatingActionButton = {
@@ -90,6 +107,7 @@ fun HallScreen(
             }
         },
         containerColor = MaterialTheme.colorScheme.background,
+        contentWindowInsets = WindowInsets.safeDrawing,
     ) { contentPadding ->
         HallField(
             state = state,
@@ -128,40 +146,168 @@ fun HallScreen(
             },
         )
     }
+
+    if (state.pendingTimerConfirmation != null && pendingTimerTable == null) {
+        LaunchedEffect(state.pendingTimerConfirmation) {
+            onAction(HallAction.CancelTimerTransition)
+        }
+    }
+
+    if (pendingTimerTable != null) {
+        TimerConfirmationDialog(
+            tableName = pendingTimerTable.name,
+            confirmation = requireNotNull(state.pendingTimerConfirmation),
+            onConfirm = { onAction(HallAction.ConfirmTimerTransition) },
+            onCancel = { onAction(HallAction.CancelTimerTransition) },
+        )
+    }
 }
 
 @Composable
 private fun HallTopBar(
     isEditMode: Boolean,
+    isFullscreenEnabled: Boolean,
     onToggleEditMode: () -> Unit,
+    onToggleFullscreen: () -> Unit,
 ) {
     Surface(tonalElevation = 3.dp) {
-        Row(
+        BoxWithConstraints(
             modifier = Modifier
                 .fillMaxWidth()
-                .statusBarsPadding()
-                .heightIn(min = 72.dp)
-                .padding(horizontal = 24.dp, vertical = 12.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                text = stringResource(R.string.hall_title),
-                style = MaterialTheme.typography.headlineMedium,
-                fontWeight = FontWeight.SemiBold,
-            )
-            Button(
-                onClick = onToggleEditMode,
-                modifier = Modifier.testTag(HallTestTags.TOGGLE_EDIT_MODE),
-            ) {
-                Text(
-                    stringResource(
-                        if (isEditMode) R.string.finish_editing else R.string.edit_hall,
+                .windowInsetsPadding(
+                    WindowInsets.safeDrawing.only(
+                        WindowInsetsSides.Top + WindowInsetsSides.Horizontal,
                     ),
-                )
+                ),
+        ) {
+            val compact = maxWidth < EXPANDED_TOOLBAR_MIN_WIDTH
+            val actions: @Composable () -> Unit = {
+                TextButton(
+                    onClick = onToggleFullscreen,
+                    modifier = Modifier.testTag(HallTestTags.TOGGLE_FULLSCREEN),
+                ) {
+                    Text(
+                        stringResource(
+                            if (isFullscreenEnabled) {
+                                R.string.exit_fullscreen
+                            } else {
+                                R.string.enter_fullscreen
+                            },
+                        ),
+                    )
+                }
+                Button(
+                    onClick = onToggleEditMode,
+                    modifier = Modifier.testTag(HallTestTags.TOGGLE_EDIT_MODE),
+                ) {
+                    Text(
+                        stringResource(
+                            if (isEditMode) R.string.finish_editing else R.string.edit_hall,
+                        ),
+                    )
+                }
+            }
+
+            if (compact) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                ) {
+                    HallTitle()
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.End,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        actions()
+                    }
+                }
+            } else {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 72.dp)
+                        .padding(horizontal = 24.dp, vertical = 12.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    HallTitle()
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        actions()
+                    }
+                }
             }
         }
     }
+}
+
+@Composable
+private fun HallTitle() {
+    Text(
+        text = stringResource(R.string.hall_title),
+        style = MaterialTheme.typography.headlineMedium,
+        fontWeight = FontWeight.SemiBold,
+    )
+}
+
+@Composable
+private fun TimerConfirmationDialog(
+    tableName: String,
+    confirmation: PendingTimerConfirmation,
+    onConfirm: () -> Unit,
+    onCancel: () -> Unit,
+) {
+    val isEarlyAdvance = confirmation.type == TimerConfirmationType.ADVANCE_EARLY
+    AlertDialog(
+        onDismissRequest = onCancel,
+        title = {
+            Text(
+                stringResource(
+                    if (isEarlyAdvance) {
+                        R.string.advance_timer_early_title
+                    } else {
+                        R.string.reset_completed_table_title
+                    },
+                ),
+            )
+        },
+        text = {
+            Text(
+                stringResource(
+                    if (isEarlyAdvance) {
+                        R.string.advance_timer_early_message
+                    } else {
+                        R.string.reset_completed_table_message
+                    },
+                    tableName,
+                ),
+            )
+        },
+        confirmButton = {
+            Button(
+                onClick = onConfirm,
+                modifier = Modifier.testTag(HallTestTags.CONFIRM_TIMER_TRANSITION),
+            ) {
+                Text(
+                    stringResource(
+                        if (isEarlyAdvance) R.string.advance else R.string.reset,
+                    ),
+                )
+            }
+        },
+        dismissButton = {
+            TextButton(
+                onClick = onCancel,
+                modifier = Modifier.testTag(HallTestTags.CANCEL_TIMER_TRANSITION),
+            ) {
+                Text(stringResource(R.string.cancel))
+            }
+        },
+    )
 }
 
 @Composable
@@ -281,10 +427,13 @@ private fun EmptyHall(modifier: Modifier = Modifier) {
 object HallTestTags {
     const val HALL_FIELD = "hall_field"
     const val TOGGLE_EDIT_MODE = "toggle_edit_mode"
+    const val TOGGLE_FULLSCREEN = "toggle_fullscreen"
     const val EDIT_MODE_INDICATOR = "edit_mode_indicator"
     const val ADD_TABLE = "add_table"
     const val CONFIRM_DELETE = "confirm_delete"
     const val CANCEL_DELETE = "cancel_delete"
+    const val CONFIRM_TIMER_TRANSITION = "confirm_timer_transition"
+    const val CANCEL_TIMER_TRANSITION = "cancel_timer_transition"
 
     fun table(id: String): String = "table_$id"
 
@@ -322,3 +471,5 @@ private fun HallScreenTabletPreview() {
         )
     }
 }
+
+private val EXPANDED_TOOLBAR_MIN_WIDTH = 720.dp

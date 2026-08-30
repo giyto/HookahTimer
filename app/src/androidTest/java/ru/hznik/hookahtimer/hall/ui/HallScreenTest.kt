@@ -1,7 +1,13 @@
 package ru.hznik.hookahtimer.hall.ui
 
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.requiredWidth
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.collectAsState
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.test.assertContentDescriptionEquals
 import androidx.compose.ui.test.assertHasClickAction
@@ -10,11 +16,13 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.click
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.swipe
+import androidx.compose.ui.unit.dp
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -29,6 +37,9 @@ import ru.hznik.hookahtimer.hall.model.TimeProvider
 import ru.hznik.hookahtimer.hall.presentation.HallAction
 import ru.hznik.hookahtimer.hall.presentation.HallUiState
 import ru.hznik.hookahtimer.hall.presentation.HallViewModel
+import ru.hznik.hookahtimer.hall.presentation.PendingTimerConfirmation
+import ru.hznik.hookahtimer.hall.presentation.TimerConfirmationType
+import ru.hznik.hookahtimer.test.dispatchActivityBack
 import ru.hznik.hookahtimer.ui.theme.HookahTimerTheme
 
 class HallScreenTest {
@@ -50,6 +61,22 @@ class HallScreenTest {
 
         composeRule.onNodeWithTag(HallTestTags.EDIT_MODE_INDICATOR).assertIsDisplayed()
         composeRule.onNodeWithTag(HallTestTags.ADD_TABLE).assertIsDisplayed()
+    }
+
+    @Test
+    fun fullscreenActionHasCorrectLabelAndDispatchesToggle() {
+        var action: HallAction? = null
+        setStaticContent(
+            state = HallUiState(isFullscreenEnabled = true),
+            onAction = { action = it },
+        )
+
+        composeRule.onNodeWithTag(HallTestTags.TOGGLE_FULLSCREEN)
+            .assertTextEquals("Выйти из полного экрана")
+            .assertHasClickAction()
+            .performClick()
+
+        assertEquals(HallAction.ToggleFullscreen, action)
     }
 
     @Test
@@ -351,12 +378,16 @@ class HallScreenTest {
         )
 
         tableNode.performClick()
+        composeRule.onNodeWithText("Завершить проходку раньше?").assertIsDisplayed()
+        composeRule.onNodeWithTag(HallTestTags.CONFIRM_TIMER_TRANSITION).performClick()
         assertEquals(
             viewModel.state.value.tables.single().passages[1].id,
             (viewModel.state.value.tables.single().timerState as TableTimerState.Running).passageId,
         )
 
         tableNode.performClick()
+        composeRule.onNodeWithText("Завершить проходку раньше?").assertIsDisplayed()
+        composeRule.onNodeWithTag(HallTestTags.CONFIRM_TIMER_TRANSITION).performClick()
         assertEquals(TableTimerState.Completed, viewModel.state.value.tables.single().timerState)
         composeRule.onNodeWithTag(
             HallTestTags.completedMark("id-1"),
@@ -364,9 +395,196 @@ class HallScreenTest {
         ).assertIsDisplayed()
 
         tableNode.performClick()
+        composeRule.onNodeWithText("Сбросить стол?").assertIsDisplayed()
+        composeRule.onNodeWithTag(HallTestTags.CONFIRM_TIMER_TRANSITION).performClick()
         assertEquals(TableTimerState.Idle, viewModel.state.value.tables.single().timerState)
         composeRule.onNodeWithTag(HallTestTags.TOGGLE_EDIT_MODE).performClick()
         tableNode.assertHasClickAction()
+    }
+
+    @Test
+    fun timerConfirmationCanBeCancelledAndShowsOnlySelectedTable() {
+        val table = HallTable(
+            id = "table",
+            name = "VIP",
+            timerState = TableTimerState.Completed,
+        )
+        var action: HallAction? = null
+        setStaticContent(
+            state = HallUiState(
+                tables = listOf(table),
+                pendingTimerConfirmation = PendingTimerConfirmation(
+                    tableId = table.id,
+                    type = TimerConfirmationType.RESET_COMPLETED,
+                ),
+            ),
+            onAction = { action = it },
+        )
+
+        composeRule.onNodeWithText("Сбросить стол?").assertIsDisplayed()
+        composeRule.onNodeWithText("Вернуть стол «VIP» в начальное состояние?")
+            .assertIsDisplayed()
+        composeRule.onNodeWithTag(HallTestTags.CANCEL_TIMER_TRANSITION).performClick()
+
+        assertEquals(HallAction.CancelTimerTransition, action)
+    }
+
+    @Test
+    fun systemBackCancelsTimerConfirmation() {
+        var action: HallAction? = null
+        setStaticContent(
+            state = HallUiState(
+                tables = listOf(
+                    HallTable(
+                        id = "completed",
+                        name = "Готов",
+                        timerState = TableTimerState.Completed,
+                    ),
+                ),
+                pendingTimerConfirmation = PendingTimerConfirmation(
+                    tableId = "completed",
+                    type = TimerConfirmationType.RESET_COMPLETED,
+                ),
+            ),
+            onAction = { action = it },
+        )
+
+        composeRule.onNodeWithText("Сбросить стол?").assertIsDisplayed()
+        dispatchActivityBack()
+        composeRule.waitForIdle()
+
+        assertEquals(HallAction.CancelTimerTransition, action)
+    }
+
+    @Test
+    fun missingPendingTableIsSafelyCancelled() {
+        var action: HallAction? = null
+        setStaticContent(
+            state = HallUiState(
+                pendingTimerConfirmation = PendingTimerConfirmation(
+                    tableId = "deleted",
+                    type = TimerConfirmationType.ADVANCE_EARLY,
+                ),
+            ),
+            onAction = { action = it },
+        )
+
+        composeRule.waitForIdle()
+
+        assertEquals(HallAction.CancelTimerTransition, action)
+        composeRule.onNodeWithTag(HallTestTags.CONFIRM_TIMER_TRANSITION)
+            .assertDoesNotExist()
+    }
+
+    @Test
+    fun toolbarActionsRemainVisibleAtMinimumTabletWidth() {
+        composeRule.setContent {
+            HookahTimerTheme {
+                Box(
+                    modifier = Modifier
+                        .requiredWidth(600.dp)
+                        .height(800.dp),
+                ) {
+                    HallScreen(
+                        state = HallUiState(),
+                        onAction = {},
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                }
+            }
+        }
+
+        composeRule.onNodeWithTag(HallTestTags.TOGGLE_FULLSCREEN).assertIsDisplayed()
+        composeRule.onNodeWithTag(HallTestTags.TOGGLE_EDIT_MODE).assertIsDisplayed()
+    }
+
+    @Test
+    fun thirtyMixedTablesHaveUniqueNodesAndKeepIndependentActions() {
+        val passages = listOf(TablePassage("p1", 1), TablePassage("p2", 1))
+        val tables = List(30) { index ->
+            val timerState = when (index % 4) {
+                1 -> TableTimerState.Running("p1", 120_000L)
+                2 -> TableTimerState.Running("p2", 500L)
+                3 -> TableTimerState.Completed
+                else -> TableTimerState.Idle
+            }
+            HallTable(
+                id = "table-$index",
+                name = "Стол ${index + 1}",
+                shape = if (index % 2 == 0) TableShape.CIRCLE else TableShape.PILL,
+                position = NormalizedPosition.of(
+                    x = (index % 6) / 5f,
+                    y = (index / 6) / 4f,
+                ),
+                passages = passages,
+                timerState = timerState,
+            )
+        }
+        var action: HallAction? = null
+        setStaticContent(
+            state = HallUiState(tables = tables),
+            onAction = { action = it },
+            timeProvider = TimeProvider { 60_000L },
+        )
+
+        tables.forEach { table ->
+            assertEquals(
+                1,
+                composeRule.onAllNodesWithTag(HallTestTags.table(table.id))
+                    .fetchSemanticsNodes().size,
+            )
+        }
+        composeRule.onNodeWithTag(HallTestTags.table("table-0")).performClick()
+        assertEquals(HallAction.AdvanceTimer("table-0"), action)
+    }
+
+    @Test
+    fun resizingHallDoesNotEmitMoveCommandsForEdgeTables() {
+        val width = mutableStateOf(600.dp)
+        val actions = mutableListOf<HallAction>()
+        val tables = listOf(
+            HallTable(
+                id = "top-left",
+                name = "Слева сверху",
+                position = NormalizedPosition.of(0f, 0f),
+            ),
+            HallTable(
+                id = "top-right",
+                name = "Справа сверху",
+                shape = TableShape.PILL,
+                position = NormalizedPosition.of(1f, 0f),
+            ),
+            HallTable(
+                id = "bottom-left",
+                name = "Слева снизу",
+                shape = TableShape.PILL,
+                position = NormalizedPosition.of(0f, 1f),
+            ),
+            HallTable(
+                id = "bottom-right",
+                name = "Справа снизу",
+                position = NormalizedPosition.of(1f, 1f),
+            ),
+        )
+        composeRule.setContent {
+            HookahTimerTheme {
+                HallScreen(
+                    state = HallUiState(tables = tables, isEditMode = true),
+                    onAction = actions::add,
+                    modifier = Modifier
+                        .requiredWidth(width.value)
+                        .height(700.dp),
+                )
+            }
+        }
+
+        composeRule.runOnIdle { width.value = 1_000.dp }
+        composeRule.waitForIdle()
+
+        assertTrue(actions.none { it is HallAction.MoveTable })
+        tables.forEach { table ->
+            composeRule.onNodeWithTag(HallTestTags.table(table.id)).assertExists()
+        }
     }
 
     private fun setStaticContent(

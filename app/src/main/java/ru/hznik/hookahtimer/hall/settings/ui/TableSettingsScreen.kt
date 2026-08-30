@@ -7,12 +7,19 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
@@ -27,7 +34,10 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.key
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalFocusManager
@@ -39,6 +49,8 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import ru.hznik.hookahtimer.R
 import ru.hznik.hookahtimer.hall.model.TableShape
 import ru.hznik.hookahtimer.hall.settings.presentation.PassageDraft
@@ -66,11 +78,13 @@ fun TableSettingsScreen(
             )
         },
         containerColor = MaterialTheme.colorScheme.background,
+        contentWindowInsets = WindowInsets.safeDrawing,
     ) { contentPadding ->
         Box(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(contentPadding)
+                .imePadding()
                 .pointerInput(focusManager, keyboardController) {
                     detectTapGestures {
                         focusManager.clearFocus()
@@ -93,6 +107,7 @@ fun TableSettingsScreen(
                     onValueChange = { onAction(TableSettingsAction.ChangeName(it)) },
                     modifier = Modifier
                         .fillMaxWidth()
+                        .bringIntoViewWhenFocused()
                         .testTag(TableSettingsTestTags.NAME),
                     label = { Text(stringResource(R.string.table_name)) },
                     singleLine = true,
@@ -162,7 +177,11 @@ private fun SettingsTopBar(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .statusBarsPadding()
+                .windowInsetsPadding(
+                    WindowInsets.safeDrawing.only(
+                        WindowInsetsSides.Top + WindowInsetsSides.Horizontal,
+                    ),
+                )
                 .heightIn(min = 72.dp)
                 .padding(horizontal = 24.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -264,6 +283,7 @@ private fun PassageEditor(
                 onValueChange = onDurationChange,
                 modifier = Modifier
                     .fillMaxWidth()
+                    .bringIntoViewWhenFocused()
                     .testTag(TableSettingsTestTags.passageDuration(passage.id)),
                 label = { Text(stringResource(R.string.passage_duration)) },
                 suffix = { Text(stringResource(R.string.minutes_short)) },
@@ -279,6 +299,25 @@ private fun PassageEditor(
         }
     }
 }
+
+@Composable
+private fun Modifier.bringIntoViewWhenFocused(): Modifier {
+    val requester = remember { BringIntoViewRequester() }
+    val scope = rememberCoroutineScope()
+    return this
+        .bringIntoViewRequester(requester)
+        .onFocusChanged { focusState ->
+            if (focusState.isFocused) {
+                scope.launch {
+                    withTimeoutOrNull(BRING_INTO_VIEW_TIMEOUT_MILLIS) {
+                        requester.bringIntoView()
+                    }
+                }
+            }
+        }
+}
+
+private const val BRING_INTO_VIEW_TIMEOUT_MILLIS = 1_000L
 
 object TableSettingsTestTags {
     const val BACKGROUND = "table_settings_background"

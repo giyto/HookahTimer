@@ -7,8 +7,6 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextReplacement
-import androidx.test.espresso.Espresso.closeSoftKeyboard
-import androidx.test.espresso.Espresso.pressBack
 import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
@@ -22,7 +20,9 @@ import ru.hznik.hookahtimer.hall.presentation.HallAction
 import ru.hznik.hookahtimer.hall.presentation.HallViewModel
 import ru.hznik.hookahtimer.hall.settings.ui.TableSettingsTestTags
 import ru.hznik.hookahtimer.hall.ui.HallTestTags
+import ru.hznik.hookahtimer.test.dispatchActivityBack
 import ru.hznik.hookahtimer.ui.theme.HookahTimerTheme
+import ru.hznik.hookahtimer.window.TabletWindowController
 
 class HookahTimerAppTest {
     @get:Rule
@@ -88,8 +88,7 @@ class HookahTimerAppTest {
         composeRule.onNodeWithTag(HallTestTags.table("table-1")).performClick()
         composeRule.onNodeWithTag(TableSettingsTestTags.NAME)
             .performTextReplacement("Не сохранять")
-        closeSoftKeyboard()
-        pressBack()
+        dispatchActivityBack()
 
         composeRule.onNodeWithText("Стол 1").assertIsDisplayed()
         assertEquals(original, viewModel.state.value.tables.single())
@@ -119,6 +118,28 @@ class HookahTimerAppTest {
         composeRule.onNodeWithTag(TableSettingsTestTags.NAME).assertDoesNotExist()
     }
 
+    @Test
+    fun windowControllerReleasesSettingsAndRestoresHallFullscreenChoice() {
+        val viewModel = configuredHallViewModel()
+        val controller = RecordingWindowController()
+        setAppContent(viewModel, tabletWindowController = controller)
+
+        composeRule.waitForIdle()
+        assertEquals("hall:false", controller.calls.last())
+
+        composeRule.onNodeWithTag(HallTestTags.TOGGLE_FULLSCREEN).performClick()
+        composeRule.waitForIdle()
+        assertEquals("hall:true", controller.calls.last())
+
+        composeRule.onNodeWithTag(HallTestTags.table("table-1")).performClick()
+        composeRule.waitForIdle()
+        assertEquals("leave", controller.calls.last())
+
+        composeRule.onNodeWithTag(TableSettingsTestTags.CANCEL).performClick()
+        composeRule.waitForIdle()
+        assertEquals("hall:true", controller.calls.last())
+    }
+
     private fun configuredHallViewModel(): HallViewModel {
         return HallViewModel(
             repository = InMemoryHallRepository(
@@ -143,14 +164,29 @@ class HookahTimerAppTest {
     private fun setAppContent(
         viewModel: HallViewModel,
         startDestination: String = HALL_ROUTE,
+        tabletWindowController: TabletWindowController? = null,
     ) {
         composeRule.setContent {
             HookahTimerTheme {
                 HookahTimerApp(
                     hallViewModel = viewModel,
                     startDestination = startDestination,
+                    tabletWindowController = tabletWindowController
+                        ?: ru.hznik.hookahtimer.window.NoOpTabletWindowController,
                 )
             }
+        }
+    }
+
+    private class RecordingWindowController : TabletWindowController {
+        val calls = mutableListOf<String>()
+
+        override fun showHall(isFullscreen: Boolean) {
+            calls += "hall:$isFullscreen"
+        }
+
+        override fun leaveHall() {
+            calls += "leave"
         }
     }
 }

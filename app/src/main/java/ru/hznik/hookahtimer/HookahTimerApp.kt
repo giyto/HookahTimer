@@ -13,6 +13,7 @@ import androidx.navigation.NavHostController
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
+import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import ru.hznik.hookahtimer.hall.presentation.HallAction
@@ -23,6 +24,9 @@ import ru.hznik.hookahtimer.hall.settings.presentation.TableSettingsResult
 import ru.hznik.hookahtimer.hall.settings.presentation.TableSettingsViewModel
 import ru.hznik.hookahtimer.hall.settings.ui.TableSettingsScreen
 import ru.hznik.hookahtimer.hall.ui.HallScreen
+import ru.hznik.hookahtimer.window.NoOpTabletWindowController
+import ru.hznik.hookahtimer.window.TabletWindowController
+import ru.hznik.hookahtimer.window.TabletWindowEffect
 
 internal const val HALL_ROUTE = "hall"
 internal const val TABLE_SETTINGS_ROUTE = "table-settings"
@@ -35,9 +39,18 @@ fun HookahTimerApp(
     modifier: Modifier = Modifier,
     startDestination: String = HALL_ROUTE,
     timeProvider: TimeProvider = hallViewModel.timeProvider,
+    tabletWindowController: TabletWindowController = NoOpTabletWindowController,
 ) {
     val navController = rememberNavController()
     val hallState by hallViewModel.state.collectAsStateWithLifecycle()
+    val currentBackStackEntry by navController.currentBackStackEntryAsState()
+    val isHallVisible = currentBackStackEntry?.destination?.route == HALL_ROUTE
+
+    TabletWindowEffect(
+        controller = tabletWindowController,
+        isHallVisible = isHallVisible,
+        isFullscreen = hallState.isFullscreenEnabled,
+    )
 
     NavHost(
         navController = navController,
