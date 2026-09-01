@@ -7,7 +7,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
@@ -15,7 +14,6 @@ import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
-import androidx.navigation.compose.dialog
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import ru.hznik.hookahtimer.hall.presentation.HallAction
@@ -55,64 +53,65 @@ fun HookahTimerApp(
         isFullscreen = hallState.isFullscreenEnabled,
     )
 
-    NavHost(
-        navController = navController,
-        startDestination = startDestination,
-        modifier = modifier.fillMaxSize(),
-    ) {
-        composable(HALL_ROUTE) {
-            HallScreen(
-                state = hallState,
-                onAction = hallViewModel::onAction,
-                timeProvider = timeProvider,
-                onOpenSettings = { tableId ->
-                    val table = hallState.tables.firstOrNull { it.id == tableId }
-                    if (hallState.isEditMode && table?.timerState == TableTimerState.Idle) {
-                        navController.navigate(tableSettingsRoute(tableId))
-                    }
-                },
-            )
-        }
-        dialog(
-            route = TABLE_SETTINGS_ROUTE_PATTERN,
-            arguments = listOf(
-                navArgument(TABLE_ID_ARGUMENT) { type = NavType.StringType },
-            ),
-            dialogProperties = DialogProperties(
-                usePlatformDefaultWidth = false,
-                decorFitsSystemWindows = false,
-            ),
-        ) { backStackEntry ->
-            val tableId = backStackEntry.arguments
-                ?.getString(TABLE_ID_ARGUMENT)
-                ?.let { encodedId -> Uri.decode(encodedId) }
-            val table = hallState.tables.firstOrNull { it.id == tableId }
-
-            if (table == null || table.timerState != TableTimerState.Idle) {
-                Box(modifier = Modifier.fillMaxSize())
-                LaunchedEffect(tableId) {
-                    navController.returnToHall()
+    Box(modifier = modifier.fillMaxSize()) {
+        HallScreen(
+            state = hallState,
+            onAction = hallViewModel::onAction,
+            timeProvider = timeProvider,
+            onOpenSettings = { tableId ->
+                val table = hallState.tables.firstOrNull { it.id == tableId }
+                if (currentRoute == HALL_ROUTE &&
+                    hallState.isEditMode &&
+                    table?.timerState == TableTimerState.Idle
+                ) {
+                    navController.navigate(tableSettingsRoute(tableId))
                 }
-            } else {
-                val settingsViewModel: TableSettingsViewModel = viewModel(
-                    key = "table-settings-${table.id}",
-                    factory = TableSettingsViewModel.factory(table),
-                )
-                val settingsState by settingsViewModel.state.collectAsStateWithLifecycle()
-                val saveResult = settingsState.saveResult
+            },
+        )
 
-                LaunchedEffect(saveResult) {
-                    if (saveResult != null) {
-                        hallViewModel.onAction(saveResult.toHallAction())
+        NavHost(
+            navController = navController,
+            startDestination = startDestination,
+            modifier = Modifier.fillMaxSize(),
+        ) {
+            composable(HALL_ROUTE) { }
+            composable(
+                route = TABLE_SETTINGS_ROUTE_PATTERN,
+                arguments = listOf(
+                    navArgument(TABLE_ID_ARGUMENT) { type = NavType.StringType },
+                ),
+            ) { backStackEntry ->
+                val tableId = backStackEntry.arguments
+                    ?.getString(TABLE_ID_ARGUMENT)
+                    ?.let { encodedId -> Uri.decode(encodedId) }
+                val table = hallState.tables.firstOrNull { it.id == tableId }
+
+                if (table == null || table.timerState != TableTimerState.Idle) {
+                    Box(modifier = Modifier.fillMaxSize())
+                    LaunchedEffect(tableId) {
                         navController.returnToHall()
                     }
-                }
+                } else {
+                    val settingsViewModel: TableSettingsViewModel = viewModel(
+                        key = "table-settings-${table.id}",
+                        factory = TableSettingsViewModel.factory(table),
+                    )
+                    val settingsState by settingsViewModel.state.collectAsStateWithLifecycle()
+                    val saveResult = settingsState.saveResult
 
-                TableSettingsScreen(
-                    state = settingsState,
-                    onAction = settingsViewModel::onAction,
-                    onCancel = { navController.returnToHall() },
-                )
+                    LaunchedEffect(saveResult) {
+                        if (saveResult != null) {
+                            hallViewModel.onAction(saveResult.toHallAction())
+                            navController.returnToHall()
+                        }
+                    }
+
+                    TableSettingsScreen(
+                        state = settingsState,
+                        onAction = settingsViewModel::onAction,
+                        onCancel = { navController.returnToHall() },
+                    )
+                }
             }
         }
     }

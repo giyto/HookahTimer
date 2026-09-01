@@ -64,12 +64,9 @@ class HallActivityRecreationTest {
         waitForText("Стол 1")
         val firstPassageId = findFirstPassageId()
         composeRule.onNodeWithText("Стол 1").performClick()
-        editSettingValue(TableSettingsTestTags.NAME, "Черновик")
+        editName("Черновик")
         composeRule.onNodeWithTag(TableSettingsTestTags.PILL_SHAPE).performClick()
-        editSettingValue(
-            TableSettingsTestTags.passageDuration(firstPassageId),
-            "45",
-        )
+        editDuration(firstPassageId, "45")
 
         composeRule.activityRule.scenario.recreate()
 
@@ -149,20 +146,23 @@ class HallActivityRecreationTest {
     }
 
     @Test
-    fun activityRecreationKeepsActiveSettingsEditor() {
+    fun activityRecreationKeepsActiveDurationEditor() {
         composeRule.onNodeWithTag(HallTestTags.TOGGLE_EDIT_MODE).performClick()
         composeRule.onNodeWithTag(HallTestTags.ADD_TABLE).performClick()
         waitForText("Стол 1")
+        val firstPassageId = findFirstPassageId()
         composeRule.onNodeWithText("Стол 1").performClick()
-        composeRule.onNodeWithTag(TableSettingsTestTags.NAME).performClick()
+        composeRule.onNodeWithTag(TableSettingsTestTags.passageDuration(firstPassageId))
+            .performScrollTo()
+            .performClick()
         composeRule.onNodeWithTag(TableSettingsTestTags.EDITOR_FIELD)
-            .performTextReplacement("Черновик в редакторе")
+            .performTextReplacement("45")
 
         composeRule.activityRule.scenario.recreate()
 
         composeRule.onNodeWithTag(TableSettingsTestTags.EDITOR_DIALOG).assertIsDisplayed()
         composeRule.onNodeWithTag(TableSettingsTestTags.EDITOR_FIELD)
-            .assertTextContains("Черновик в редакторе")
+            .assertTextContains("45")
     }
 
     @Test
@@ -215,8 +215,15 @@ class HallActivityRecreationTest {
         }
     }
 
-    private fun editSettingValue(triggerTag: String, value: String) {
-        composeRule.onNodeWithTag(triggerTag)
+    private fun editName(value: String) {
+        composeRule.onNodeWithTag(TableSettingsTestTags.NAME)
+            .performScrollTo()
+            .performClick()
+            .performTextReplacement(value)
+    }
+
+    private fun editDuration(passageId: String, value: String) {
+        composeRule.onNodeWithTag(TableSettingsTestTags.passageDuration(passageId))
             .performScrollTo()
             .performClick()
         composeRule.onNodeWithTag(TableSettingsTestTags.EDITOR_FIELD)

@@ -9,7 +9,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
@@ -49,6 +48,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
@@ -73,6 +73,8 @@ fun TableSettingsScreen(
     modifier: Modifier = Modifier,
 ) {
     var activeEditorKey by rememberSaveable { mutableStateOf<String?>(null) }
+    val focusManager = LocalFocusManager.current
+    val keyboardController = LocalSoftwareKeyboardController.current
     val dismiss = {
         if (activeEditorKey != null) activeEditorKey = null else onCancel()
     }
@@ -112,7 +114,10 @@ fun TableSettingsScreen(
                 .clickable(
                     interactionSource = remember { MutableInteractionSource() },
                     indication = null,
-                    onClick = {},
+                    onClick = {
+                        focusManager.clearFocus()
+                        keyboardController?.hide()
+                    },
                 )
                 .imePadding(),
             shape = if (isSidePanel) {
@@ -136,15 +141,30 @@ fun TableSettingsScreen(
                         .padding(horizontal = 20.dp, vertical = 16.dp),
                     verticalArrangement = Arrangement.spacedBy(14.dp),
                 ) {
-                    EditableSettingValue(
+                    OutlinedTextField(
                         value = state.nameInput,
-                        label = stringResource(R.string.table_name),
-                        onClick = { activeEditorKey = NAME_EDITOR_KEY },
+                        onValueChange = { onAction(TableSettingsAction.ChangeName(it)) },
                         modifier = Modifier
                             .fillMaxWidth()
                             .testTag(TableSettingsTestTags.NAME),
+                        label = { Text(stringResource(R.string.table_name)) },
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(
+                            keyboardType = KeyboardType.Text,
+                            imeAction = ImeAction.Done,
+                        ),
+                        keyboardActions = KeyboardActions(
+                            onDone = {
+                                focusManager.clearFocus()
+                                keyboardController?.hide()
+                            },
+                        ),
                         isError = state.nameHasError,
-                        errorText = stringResource(R.string.table_name_error),
+                        supportingText = if (state.nameHasError) {
+                            { Text(stringResource(R.string.table_name_error)) }
+                        } else {
+                            null
+                        },
                     )
 
                     ShapeSelector(
@@ -187,17 +207,6 @@ fun TableSettingsScreen(
     }
 
     when (val editorKey = activeEditorKey) {
-        NAME_EDITOR_KEY -> SettingsFieldEditorDialog(
-            editorKey = NAME_EDITOR_KEY,
-            title = stringResource(R.string.table_name),
-            value = state.nameInput,
-            onValueChange = { onAction(TableSettingsAction.ChangeName(it)) },
-            keyboardType = KeyboardType.Text,
-            isError = state.nameHasError,
-            errorText = stringResource(R.string.table_name_error),
-            onDismiss = { activeEditorKey = null },
-        )
-
         null -> Unit
 
         else -> {
@@ -218,46 +227,6 @@ fun TableSettingsScreen(
                     isError = passage.durationHasError,
                     errorText = stringResource(R.string.passage_duration_error),
                     onDismiss = { activeEditorKey = null },
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun EditableSettingValue(
-    value: String,
-    label: String,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-    isError: Boolean = false,
-    errorText: String? = null,
-) {
-    OutlinedButton(
-        onClick = onClick,
-        modifier = modifier.heightIn(min = 60.dp),
-    ) {
-        Column(
-            modifier = Modifier.fillMaxWidth(),
-            verticalArrangement = Arrangement.spacedBy(2.dp),
-        ) {
-            Text(
-                text = label,
-                style = MaterialTheme.typography.labelMedium,
-                color = if (isError) MaterialTheme.colorScheme.error else {
-                    MaterialTheme.colorScheme.onSurfaceVariant
-                },
-            )
-            Text(
-                text = value.ifEmpty { " " },
-                style = MaterialTheme.typography.bodyLarge,
-                color = MaterialTheme.colorScheme.onSurface,
-            )
-            if (isError && errorText != null) {
-                Text(
-                    text = errorText,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.error,
                 )
             }
         }
@@ -492,5 +461,4 @@ object TableSettingsTestTags {
     fun deletePassage(id: String): String = "table_settings_delete_passage_$id"
 }
 
-private const val NAME_EDITOR_KEY = "__name__"
 private val SIDE_PANEL_MIN_WIDTH = 600.dp

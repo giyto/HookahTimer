@@ -47,10 +47,10 @@ class HookahTimerAppTest {
         setAppContent(viewModel)
 
         composeRule.onNodeWithTag(HallTestTags.table("table-1")).performClick()
-        editSettingValue(TableSettingsTestTags.NAME, "VIP")
+        editName("VIP")
         composeRule.onNodeWithTag(TableSettingsTestTags.PILL_SHAPE).performClick()
-        editSettingValue(TableSettingsTestTags.passageDuration("passage-1"), "15")
-        editSettingValue(TableSettingsTestTags.passageDuration("passage-2"), "45")
+        editDuration("passage-1", "15")
+        editDuration("passage-2", "45")
         composeRule.onNodeWithTag(TableSettingsTestTags.SAVE).performClick()
 
         composeRule.onNodeWithText("VIP").assertIsDisplayed()
@@ -69,7 +69,7 @@ class HookahTimerAppTest {
         val original = viewModel.state.value.tables.single()
 
         composeRule.onNodeWithTag(HallTestTags.table("table-1")).performClick()
-        editSettingValue(TableSettingsTestTags.NAME, "Не сохранять")
+        editName("Не сохранять")
         composeRule.onNodeWithTag(TableSettingsTestTags.CANCEL).performClick()
 
         composeRule.onNodeWithText("Стол 1").assertIsDisplayed()
@@ -84,7 +84,7 @@ class HookahTimerAppTest {
         val original = viewModel.state.value.tables.single()
 
         composeRule.onNodeWithTag(HallTestTags.table("table-1")).performClick()
-        editSettingValue(TableSettingsTestTags.NAME, "Не сохранять")
+        editName("Не сохранять")
         dispatchActivityBack()
 
         composeRule.onNodeWithText("Стол 1").assertIsDisplayed()
@@ -162,8 +162,15 @@ class HookahTimerAppTest {
         TablePassage("passage-2", 30),
     )
 
-    private fun editSettingValue(triggerTag: String, value: String) {
-        composeRule.onNodeWithTag(triggerTag)
+    private fun editName(value: String) {
+        composeRule.onNodeWithTag(TableSettingsTestTags.NAME)
+            .performScrollTo()
+            .performClick()
+            .performTextReplacement(value)
+    }
+
+    private fun editDuration(passageId: String, value: String) {
+        composeRule.onNodeWithTag(TableSettingsTestTags.passageDuration(passageId))
             .performScrollTo()
             .performClick()
         composeRule.onNodeWithTag(TableSettingsTestTags.EDITOR_FIELD)
