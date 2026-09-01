@@ -19,6 +19,10 @@ data class HallTableEntity(
     val positionX: Float,
     @ColumnInfo(name = "position_y")
     val positionY: Float,
+    @ColumnInfo(name = "canvas_x")
+    val canvasX: Float,
+    @ColumnInfo(name = "canvas_y")
+    val canvasY: Float,
     @ColumnInfo(name = "sort_order")
     val sortOrder: Int,
     @ColumnInfo(name = "timer_status")

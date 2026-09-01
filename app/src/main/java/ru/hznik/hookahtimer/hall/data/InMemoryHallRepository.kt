@@ -5,7 +5,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import ru.hznik.hookahtimer.hall.model.HallTable
-import ru.hznik.hookahtimer.hall.model.NormalizedPosition
+import ru.hznik.hookahtimer.hall.model.CanvasPosition
 import ru.hznik.hookahtimer.hall.model.TablePassage
 import ru.hznik.hookahtimer.hall.model.TableShape
 import ru.hznik.hookahtimer.hall.model.TableTimerState
@@ -35,7 +35,7 @@ class InMemoryHallRepository(
         }
     }
 
-    override suspend fun moveTable(tableId: String, position: NormalizedPosition) {
+    override suspend fun moveTable(tableId: String, position: CanvasPosition) {
         mutex.withLock {
             mutableTables.value = mutableTables.value.map { table ->
                 if (table.id == tableId) table.copy(position = position) else table

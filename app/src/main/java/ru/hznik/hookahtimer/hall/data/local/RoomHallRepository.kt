@@ -7,7 +7,7 @@ import kotlinx.coroutines.flow.map
 import ru.hznik.hookahtimer.hall.data.HallRepository
 import ru.hznik.hookahtimer.hall.data.initialTablePosition
 import ru.hznik.hookahtimer.hall.model.HallTable
-import ru.hznik.hookahtimer.hall.model.NormalizedPosition
+import ru.hznik.hookahtimer.hall.model.CanvasPosition
 import ru.hznik.hookahtimer.hall.model.TablePassage
 import ru.hznik.hookahtimer.hall.model.TableShape
 import ru.hznik.hookahtimer.hall.model.TableTimerState
@@ -60,8 +60,15 @@ class RoomHallRepository(
         }
     }
 
-    override suspend fun moveTable(tableId: String, position: NormalizedPosition) {
-        dao.updatePosition(tableId, position.x, position.y)
+    override suspend fun moveTable(tableId: String, position: CanvasPosition) {
+        val table = dao.getTable(tableId)?.toDomain() ?: return
+        dao.updatePosition(
+            tableId = tableId,
+            positionX = position.toLegacyNormalizedX(table.shape),
+            positionY = position.toLegacyNormalizedY(table.shape),
+            canvasX = position.x,
+            canvasY = position.y,
+        )
     }
 
     override suspend fun updateTableSettings(

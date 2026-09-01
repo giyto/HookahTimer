@@ -1,7 +1,7 @@
 package ru.hznik.hookahtimer.hall.presentation
 
 import ru.hznik.hookahtimer.hall.model.HallTable
-import ru.hznik.hookahtimer.hall.model.NormalizedPosition
+import ru.hznik.hookahtimer.hall.model.CanvasPosition
 import ru.hznik.hookahtimer.hall.model.TablePassage
 import ru.hznik.hookahtimer.hall.model.TableShape
 
@@ -18,7 +18,7 @@ sealed interface HallAction {
     data object AddTable : HallAction
     data class MoveTable(
         val tableId: String,
-        val position: NormalizedPosition,
+        val position: CanvasPosition,
     ) : HallAction
     data class RequestDelete(val tableId: String) : HallAction
     data class UpdateTableSettings(

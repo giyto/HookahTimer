@@ -4,7 +4,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import ru.hznik.hookahtimer.hall.model.HallTable
-import ru.hznik.hookahtimer.hall.model.NormalizedPosition
+import ru.hznik.hookahtimer.hall.model.CanvasPosition
 import ru.hznik.hookahtimer.hall.model.TablePassage
 import ru.hznik.hookahtimer.hall.model.TableShape
 import ru.hznik.hookahtimer.hall.model.TableTimerState
@@ -16,7 +16,7 @@ class HallEntityMappersTest {
             id = "table",
             name = "VIP",
             shape = TableShape.PILL,
-            position = NormalizedPosition.of(0.25f, 0.75f),
+            position = CanvasPosition(280f, 520f),
             passages = listOf(
                 TablePassage("first", 15),
                 TablePassage("second", 45),
@@ -47,6 +47,8 @@ class HallEntityMappersTest {
                 shape = TableShape.CIRCLE.name,
                 positionX = 0.5f,
                 positionY = 0.5f,
+                canvasX = 544f,
+                canvasY = 344f,
                 sortOrder = 0,
                 timerStatus = TimerStatus.RUNNING.name,
                 currentPassageId = "missing",

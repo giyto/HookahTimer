@@ -4,6 +4,7 @@ import android.view.WindowManager
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.assertTextContains
+import androidx.compose.ui.test.assertContentDescriptionEquals
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onAllNodesWithTag
@@ -106,7 +107,7 @@ class HallActivityRecreationTest {
     }
 
     @Test
-    fun hallKeepsScreenOnButSettingsReleaseWindowFlag() {
+    fun hallAndSettingsOverlayKeepScreenOn() {
         val activityBeforeBackground = composeRule.activity
         assertTrue(activityBeforeBackground.window.hasKeepScreenOnFlag())
 
@@ -126,7 +127,7 @@ class HallActivityRecreationTest {
         composeRule.waitForIdle()
 
         composeRule.activityRule.scenario.onActivity { activity ->
-            assertFalse(activity.window.hasKeepScreenOnFlag())
+            assertTrue(activity.window.hasKeepScreenOnFlag())
         }
         composeRule.onNodeWithTag(TableSettingsTestTags.CANCEL).performClick()
         composeRule.waitForIdle()
@@ -138,11 +139,30 @@ class HallActivityRecreationTest {
     @Test
     fun activityRecreationKeepsFullscreenSessionChoice() {
         composeRule.onNodeWithTag(HallTestTags.TOGGLE_FULLSCREEN).performClick()
-        composeRule.onNodeWithText("Выйти из полного экрана").assertIsDisplayed()
+        composeRule.onNodeWithTag(HallTestTags.TOGGLE_FULLSCREEN)
+            .assertContentDescriptionEquals("Выйти из полного экрана")
 
         composeRule.activityRule.scenario.recreate()
 
-        composeRule.onNodeWithText("Выйти из полного экрана").assertIsDisplayed()
+        composeRule.onNodeWithTag(HallTestTags.TOGGLE_FULLSCREEN)
+            .assertContentDescriptionEquals("Выйти из полного экрана")
+    }
+
+    @Test
+    fun activityRecreationKeepsActiveSettingsEditor() {
+        composeRule.onNodeWithTag(HallTestTags.TOGGLE_EDIT_MODE).performClick()
+        composeRule.onNodeWithTag(HallTestTags.ADD_TABLE).performClick()
+        waitForText("Стол 1")
+        composeRule.onNodeWithText("Стол 1").performClick()
+        composeRule.onNodeWithTag(TableSettingsTestTags.NAME).performClick()
+        composeRule.onNodeWithTag(TableSettingsTestTags.EDITOR_FIELD)
+            .performTextReplacement("Черновик в редакторе")
+
+        composeRule.activityRule.scenario.recreate()
+
+        composeRule.onNodeWithTag(TableSettingsTestTags.EDITOR_DIALOG).assertIsDisplayed()
+        composeRule.onNodeWithTag(TableSettingsTestTags.EDITOR_FIELD)
+            .assertTextContains("Черновик в редакторе")
     }
 
     @Test

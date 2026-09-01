@@ -38,7 +38,7 @@ class HookahTimerAppTest {
         )
 
         composeRule.waitForIdle()
-        composeRule.onNodeWithText("Зал").assertIsDisplayed()
+        composeRule.onNodeWithTag(HallTestTags.HALL_FIELD).assertIsDisplayed()
     }
 
     @Test
@@ -55,7 +55,7 @@ class HookahTimerAppTest {
 
         composeRule.onNodeWithText("VIP").assertIsDisplayed()
         composeRule.onNodeWithTag(HallTestTags.table("table-1"))
-            .assertContentDescriptionEquals("Pill-стол VIP")
+            .assertContentDescriptionEquals("Стол-пилюля VIP")
         val table = viewModel.state.value.tables.single()
         assertEquals(TableShape.PILL, table.shape)
         assertEquals(listOf(15, 45), table.passages.map { it.durationMinutes })
@@ -111,13 +111,15 @@ class HookahTimerAppTest {
             startDestination = tableSettingsRoute("table-1"),
         )
 
-        composeRule.onNodeWithText("Зал").assertIsDisplayed()
+        composeRule.onNodeWithTag(HallTestTags.HALL_FIELD).assertIsDisplayed()
         composeRule.onNodeWithTag(TableSettingsTestTags.NAME).assertDoesNotExist()
     }
 
     @Test
-    fun windowControllerReleasesSettingsAndRestoresHallFullscreenChoice() {
-        val viewModel = configuredHallViewModel()
+    fun settingsOverlayKeepsHallAndFullscreenWindowState() {
+        val viewModel = configuredHallViewModel().also { configuredViewModel ->
+            configuredViewModel.onAction(HallAction.ToggleEditMode)
+        }
         val controller = RecordingWindowController()
         setAppContent(viewModel, tabletWindowController = controller)
 
@@ -128,9 +130,11 @@ class HookahTimerAppTest {
         composeRule.waitForIdle()
         assertEquals("hall:true", controller.calls.last())
 
+        composeRule.onNodeWithTag(HallTestTags.TOGGLE_EDIT_MODE).performClick()
         composeRule.onNodeWithTag(HallTestTags.table("table-1")).performClick()
         composeRule.waitForIdle()
-        assertEquals("leave", controller.calls.last())
+        assertEquals("hall:true", controller.calls.last())
+        composeRule.onNodeWithTag(HallTestTags.HALL_FIELD).assertExists()
 
         composeRule.onNodeWithTag(TableSettingsTestTags.CANCEL).performClick()
         composeRule.waitForIdle()

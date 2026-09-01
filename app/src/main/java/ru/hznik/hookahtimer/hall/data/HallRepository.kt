@@ -2,7 +2,7 @@ package ru.hznik.hookahtimer.hall.data
 
 import kotlinx.coroutines.flow.Flow
 import ru.hznik.hookahtimer.hall.model.HallTable
-import ru.hznik.hookahtimer.hall.model.NormalizedPosition
+import ru.hznik.hookahtimer.hall.model.CanvasPosition
 import ru.hznik.hookahtimer.hall.model.TablePassage
 import ru.hznik.hookahtimer.hall.model.TableShape
 
@@ -16,7 +16,7 @@ interface HallRepository {
 
     suspend fun moveTable(
         tableId: String,
-        position: NormalizedPosition,
+        position: CanvasPosition,
     )
 
     suspend fun updateTableSettings(
@@ -34,15 +34,18 @@ interface HallRepository {
     )
 }
 
-internal fun initialTablePosition(number: Int): NormalizedPosition {
+internal fun initialTablePosition(number: Int): CanvasPosition {
     val index = (number - 1).coerceAtLeast(0)
     val column = index % INITIAL_COLUMNS
-    val row = (index / INITIAL_COLUMNS) % INITIAL_ROWS
-    return NormalizedPosition.of(
-        x = (column + 1f) / (INITIAL_COLUMNS + 1f),
-        y = (row + 1f) / (INITIAL_ROWS + 1f),
+    val row = index / INITIAL_COLUMNS
+    return CanvasPosition(
+        x = INITIAL_MARGIN_X + column * INITIAL_COLUMN_SPACING,
+        y = INITIAL_MARGIN_Y + row * INITIAL_ROW_SPACING,
     )
 }
 
 private const val INITIAL_COLUMNS = 4
-private const val INITIAL_ROWS = 3
+private const val INITIAL_MARGIN_X = 120f
+private const val INITIAL_MARGIN_Y = 120f
+private const val INITIAL_COLUMN_SPACING = 240f
+private const val INITIAL_ROW_SPACING = 190f

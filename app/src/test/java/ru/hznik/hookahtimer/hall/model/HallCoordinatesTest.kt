@@ -1,68 +1,67 @@
 package ru.hznik.hookahtimer.hall.model
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertThrows
 import org.junit.Test
 
 class HallCoordinatesTest {
-    private val field = PixelSize(width = 500f, height = 400f)
-    private val table = PixelSize(width = 100f, height = 80f)
-
     @Test
-    fun normalizedPositionConvertsToAvailablePixelArea() {
-        val result = NormalizedPosition.of(x = 0.5f, y = 0.25f)
-            .toPixelPosition(fieldSize = field, tableSize = table)
-
-        assertEquals(200f, result.x, DELTA)
-        assertEquals(80f, result.y, DELTA)
-    }
-
-    @Test
-    fun pixelPositionInsideBoundsIsPreserved() {
-        val result = PixelPosition(x = 120f, y = 160f)
-            .clampWithin(fieldSize = field, tableSize = table)
-
-        assertEquals(120f, result.x, DELTA)
-        assertEquals(160f, result.y, DELTA)
-    }
-
-    @Test
-    fun pixelPositionIsClampedAtEveryEdge() {
-        val topLeft = PixelPosition(x = -10f, y = -20f)
-            .clampWithin(fieldSize = field, tableSize = table)
-        val bottomRight = PixelPosition(x = 900f, y = 800f)
-            .clampWithin(fieldSize = field, tableSize = table)
-
-        assertEquals(0f, topLeft.x, DELTA)
-        assertEquals(0f, topLeft.y, DELTA)
-        assertEquals(400f, bottomRight.x, DELTA)
-        assertEquals(320f, bottomRight.y, DELTA)
-    }
-
-    @Test
-    fun outOfBoundsPixelsNormalizeToNearestEdge() {
-        val result = PixelPosition(x = -20f, y = 500f)
-            .toNormalizedPosition(fieldSize = field, tableSize = table)
-
-        assertEquals(0f, result.x, DELTA)
-        assertEquals(1f, result.y, DELTA)
-    }
-
-    @Test
-    fun fieldSmallerThanTableUsesOrigin() {
-        val smallField = PixelSize(width = 50f, height = 40f)
-        val pixel = NormalizedPosition.Center.toPixelPosition(
-            fieldSize = smallField,
-            tableSize = table,
-        )
-        val normalized = PixelPosition(x = 100f, y = 100f).toNormalizedPosition(
-            fieldSize = smallField,
-            tableSize = table,
+    fun worldPositionConvertsThroughViewportScaleAndOffset() {
+        val transform = CanvasTransform(
+            scale = 2f,
+            offset = CanvasPosition(100f, 50f),
         )
 
-        assertEquals(0f, pixel.x, DELTA)
-        assertEquals(0f, pixel.y, DELTA)
-        assertEquals(0f, normalized.x, DELTA)
-        assertEquals(0f, normalized.y, DELTA)
+        val result = CanvasPosition(250f, 150f).toScreenPosition(transform)
+
+        assertEquals(300f, result.x, DELTA)
+        assertEquals(200f, result.y, DELTA)
+    }
+
+    @Test
+    fun screenAndWorldConversionsRoundTripAtDifferentScales() {
+        listOf(0.35f, 1f, 2.5f).forEach { scale ->
+            val transform = CanvasTransform(
+                scale = scale,
+                offset = CanvasPosition(-120f, 80f),
+            )
+            val world = CanvasPosition(540f, -40f)
+
+            val restored = world.toScreenPosition(transform).toCanvasPosition(transform)
+
+            assertEquals(world.x, restored.x, DELTA)
+            assertEquals(world.y, restored.y, DELTA)
+        }
+    }
+
+    @Test
+    fun screenDeltaIsConvertedWithoutViewportOffset() {
+        val transform = CanvasTransform(
+            scale = 2f,
+            offset = CanvasPosition(1_000f, 1_000f),
+        )
+
+        val result = ScreenPosition(80f, -40f).screenDeltaToCanvas(transform)
+
+        assertEquals(40f, result.x, DELTA)
+        assertEquals(-20f, result.y, DELTA)
+    }
+
+    @Test
+    fun factoriesSanitizeNonFiniteInput() {
+        assertEquals(CanvasPosition.Origin, CanvasPosition.of(Float.NaN, Float.POSITIVE_INFINITY))
+        assertEquals(CanvasSize.Zero, CanvasSize.of(Float.NEGATIVE_INFINITY, Float.NaN))
+        assertEquals(ScreenPosition(0f, 0f), ScreenPosition.of(Float.NaN, Float.POSITIVE_INFINITY))
+    }
+
+    @Test
+    fun constructorsRejectInvalidScaleAndSize() {
+        assertThrows(IllegalArgumentException::class.java) {
+            CanvasTransform(scale = 0f, offset = CanvasPosition.Origin)
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            CanvasSize(width = -1f, height = 10f)
+        }
     }
 
     private companion object {

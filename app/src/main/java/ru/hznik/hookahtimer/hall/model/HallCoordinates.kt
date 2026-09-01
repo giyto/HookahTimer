@@ -1,49 +1,66 @@
 package ru.hznik.hookahtimer.hall.model
 
-data class PixelPosition(
+data class ScreenPosition(
     val x: Float,
     val y: Float,
-)
+) {
+    init {
+        require(x.isFinite()) { "x must be finite" }
+        require(y.isFinite()) { "y must be finite" }
+    }
 
-data class PixelSize(
+    companion object {
+        fun of(x: Float, y: Float): ScreenPosition = ScreenPosition(
+            x = x.finiteOrZero(),
+            y = y.finiteOrZero(),
+        )
+    }
+}
+
+data class CanvasSize(
     val width: Float,
     val height: Float,
-)
+) {
+    init {
+        require(width.isFinite() && width >= 0f) { "width must be finite and non-negative" }
+        require(height.isFinite() && height >= 0f) { "height must be finite and non-negative" }
+    }
 
-fun NormalizedPosition.toPixelPosition(
-    fieldSize: PixelSize,
-    tableSize: PixelSize,
-): PixelPosition {
-    val availableWidth = availableDistance(fieldSize.width, tableSize.width)
-    val availableHeight = availableDistance(fieldSize.height, tableSize.height)
-    return PixelPosition(
-        x = x * availableWidth,
-        y = y * availableHeight,
-    )
+    companion object {
+        val Zero = CanvasSize(0f, 0f)
+
+        fun of(width: Float, height: Float): CanvasSize = CanvasSize(
+            width = width.finiteOrZero().coerceAtLeast(0f),
+            height = height.finiteOrZero().coerceAtLeast(0f),
+        )
+    }
 }
 
-fun PixelPosition.toNormalizedPosition(
-    fieldSize: PixelSize,
-    tableSize: PixelSize,
-): NormalizedPosition {
-    val clamped = clampWithin(fieldSize = fieldSize, tableSize = tableSize)
-    val availableWidth = availableDistance(fieldSize.width, tableSize.width)
-    val availableHeight = availableDistance(fieldSize.height, tableSize.height)
-    return NormalizedPosition.of(
-        x = if (availableWidth == 0f) 0f else clamped.x / availableWidth,
-        y = if (availableHeight == 0f) 0f else clamped.y / availableHeight,
-    )
+data class CanvasTransform(
+    val scale: Float,
+    val offset: CanvasPosition,
+) {
+    init {
+        require(scale.isFinite() && scale > 0f) { "scale must be finite and positive" }
+    }
 }
 
-fun PixelPosition.clampWithin(
-    fieldSize: PixelSize,
-    tableSize: PixelSize,
-): PixelPosition = PixelPosition(
-    x = finiteOrZero(x).coerceIn(0f, availableDistance(fieldSize.width, tableSize.width)),
-    y = finiteOrZero(y).coerceIn(0f, availableDistance(fieldSize.height, tableSize.height)),
-)
+fun CanvasPosition.toScreenPosition(transform: CanvasTransform): ScreenPosition =
+    ScreenPosition(
+        x = (x - transform.offset.x) * transform.scale,
+        y = (y - transform.offset.y) * transform.scale,
+    )
 
-private fun availableDistance(field: Float, item: Float): Float =
-    (finiteOrZero(field) - finiteOrZero(item)).coerceAtLeast(0f)
+fun ScreenPosition.toCanvasPosition(transform: CanvasTransform): CanvasPosition =
+    CanvasPosition(
+        x = x / transform.scale + transform.offset.x,
+        y = y / transform.scale + transform.offset.y,
+    )
 
-private fun finiteOrZero(value: Float): Float = if (value.isFinite()) value else 0f
+fun ScreenPosition.screenDeltaToCanvas(transform: CanvasTransform): CanvasPosition =
+    CanvasPosition(
+        x = x / transform.scale,
+        y = y / transform.scale,
+    )
+
+private fun Float.finiteOrZero(): Float = if (isFinite()) this else 0f

@@ -7,6 +7,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
@@ -14,6 +15,7 @@ import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
+import androidx.navigation.compose.dialog
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import ru.hznik.hookahtimer.hall.presentation.HallAction
@@ -44,7 +46,8 @@ fun HookahTimerApp(
     val navController = rememberNavController()
     val hallState by hallViewModel.state.collectAsStateWithLifecycle()
     val currentBackStackEntry by navController.currentBackStackEntryAsState()
-    val isHallVisible = currentBackStackEntry?.destination?.route == HALL_ROUTE
+    val currentRoute = currentBackStackEntry?.destination?.route
+    val isHallVisible = currentRoute == HALL_ROUTE || currentRoute == TABLE_SETTINGS_ROUTE_PATTERN
 
     TabletWindowEffect(
         controller = tabletWindowController,
@@ -70,10 +73,14 @@ fun HookahTimerApp(
                 },
             )
         }
-        composable(
+        dialog(
             route = TABLE_SETTINGS_ROUTE_PATTERN,
             arguments = listOf(
                 navArgument(TABLE_ID_ARGUMENT) { type = NavType.StringType },
+            ),
+            dialogProperties = DialogProperties(
+                usePlatformDefaultWidth = false,
+                decorFitsSystemWindows = false,
             ),
         ) { backStackEntry ->
             val tableId = backStackEntry.arguments

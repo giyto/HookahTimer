@@ -1,7 +1,7 @@
 package ru.hznik.hookahtimer.hall.data.local
 
 import ru.hznik.hookahtimer.hall.model.HallTable
-import ru.hznik.hookahtimer.hall.model.NormalizedPosition
+import ru.hznik.hookahtimer.hall.model.CanvasPosition
 import ru.hznik.hookahtimer.hall.model.TablePassage
 import ru.hznik.hookahtimer.hall.model.TableShape
 import ru.hznik.hookahtimer.hall.model.TableTimerState
@@ -18,8 +18,10 @@ internal fun HallTable.toPersisted(sortOrder: Int): PersistedHallTable {
             id = id,
             name = name,
             shape = shape.name,
-            positionX = position.x,
-            positionY = position.y,
+            positionX = position.toLegacyNormalizedX(shape),
+            positionY = position.toLegacyNormalizedY(shape),
+            canvasX = position.x,
+            canvasY = position.y,
             sortOrder = sortOrder,
             timerStatus = persistedTimer.status,
             currentPassageId = persistedTimer.passageId,
@@ -50,7 +52,7 @@ internal fun TableWithPassages.toDomain(): HallTable {
         id = table.id,
         name = table.name,
         shape = TableShape.entries.firstOrNull { it.name == table.shape } ?: TableShape.CIRCLE,
-        position = NormalizedPosition.of(table.positionX, table.positionY),
+        position = CanvasPosition.of(table.canvasX, table.canvasY),
         passages = domainPassages,
         timerState = timerState,
     )
@@ -109,4 +111,20 @@ internal enum class TimerStatus {
     IDLE,
     RUNNING,
     COMPLETED,
+}
+
+internal fun CanvasPosition.toLegacyNormalizedX(shape: TableShape): Float {
+    val tableWidth = when (shape) {
+        TableShape.CIRCLE -> LEGACY_CIRCLE_SIZE
+        TableShape.PILL -> LEGACY_PILL_WIDTH
+    }
+    return (x / (LEGACY_CANVAS_WIDTH - tableWidth)).coerceIn(0f, 1f)
+}
+
+internal fun CanvasPosition.toLegacyNormalizedY(shape: TableShape): Float {
+    val tableHeight = when (shape) {
+        TableShape.CIRCLE -> LEGACY_CIRCLE_SIZE
+        TableShape.PILL -> LEGACY_PILL_HEIGHT
+    }
+    return (y / (LEGACY_CANVAS_HEIGHT - tableHeight)).coerceIn(0f, 1f)
 }

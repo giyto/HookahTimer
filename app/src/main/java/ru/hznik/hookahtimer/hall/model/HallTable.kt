@@ -4,7 +4,7 @@ data class HallTable(
     val id: String,
     val name: String,
     val shape: TableShape = TableShape.CIRCLE,
-    val position: NormalizedPosition = NormalizedPosition.Center,
+    val position: CanvasPosition = CanvasPosition.Default,
     val passages: List<TablePassage> = TablePassage.defaultList(),
     val timerState: TableTimerState = TableTimerState.Idle,
 ) {
@@ -27,24 +27,24 @@ enum class TableShape {
     PILL,
 }
 
-data class NormalizedPosition(
+data class CanvasPosition(
     val x: Float,
     val y: Float,
 ) {
     init {
-        require(x.isFinite() && x in 0f..1f) { "x must be finite and between 0 and 1" }
-        require(y.isFinite() && y in 0f..1f) { "y must be finite and between 0 and 1" }
+        require(x.isFinite()) { "x must be finite" }
+        require(y.isFinite()) { "y must be finite" }
     }
 
     companion object {
-        val Center = NormalizedPosition(x = 0.5f, y = 0.5f)
+        val Origin = CanvasPosition(x = 0f, y = 0f)
+        val Default = CanvasPosition(x = 160f, y = 140f)
 
-        fun of(x: Float, y: Float): NormalizedPosition = NormalizedPosition(
-            x = x.normalizedCoordinate(),
-            y = y.normalizedCoordinate(),
+        fun of(x: Float, y: Float): CanvasPosition = CanvasPosition(
+            x = x.finiteOrZero(),
+            y = y.finiteOrZero(),
         )
     }
 }
 
-private fun Float.normalizedCoordinate(): Float =
-    if (isFinite()) coerceIn(0f, 1f) else 0f
+private fun Float.finiteOrZero(): Float = if (isFinite()) this else 0f

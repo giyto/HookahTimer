@@ -14,7 +14,7 @@ import ru.hznik.hookahtimer.MainDispatcherRule
 import ru.hznik.hookahtimer.hall.data.HallRepository
 import ru.hznik.hookahtimer.hall.data.InMemoryHallRepository
 import ru.hznik.hookahtimer.hall.model.HallTable
-import ru.hznik.hookahtimer.hall.model.NormalizedPosition
+import ru.hznik.hookahtimer.hall.model.CanvasPosition
 import ru.hznik.hookahtimer.hall.model.TablePassage
 import ru.hznik.hookahtimer.hall.model.TableShape
 import ru.hznik.hookahtimer.hall.model.TableTimerState
@@ -76,8 +76,8 @@ class HallViewModelTest {
     @Test
     fun moveWorksInEditModeAndIsIgnoredInWorkingMode() {
         val viewModel = viewModel(idFactory = { "id-1" })
-        val editPosition = NormalizedPosition.of(x = 0.9f, y = 0.1f)
-        val forbiddenPosition = NormalizedPosition.of(x = 0.2f, y = 0.8f)
+        val editPosition = CanvasPosition(x = 900f, y = 100f)
+        val forbiddenPosition = CanvasPosition(x = 200f, y = 800f)
         viewModel.onAction(HallAction.ToggleEditMode)
         viewModel.onAction(HallAction.AddTable)
         viewModel.onAction(HallAction.MoveTable("id-1", editPosition))
@@ -229,7 +229,7 @@ class HallViewModelTest {
         viewModel.onAction(HallAction.AdvanceTimer("id-1"))
         viewModel.onAction(HallAction.ToggleEditMode)
         val timerBeforeMove = viewModel.state.value.tables.single().timerState
-        val newPosition = NormalizedPosition.of(0.8f, 0.2f)
+        val newPosition = CanvasPosition(800f, 200f)
 
         viewModel.onAction(HallAction.MoveTable("id-1", newPosition))
 
@@ -444,7 +444,7 @@ class HallViewModelTest {
         var advanceCalls = 0
 
         override suspend fun addTable(tableId: String, passageIds: List<String>) = Unit
-        override suspend fun moveTable(tableId: String, position: NormalizedPosition) = Unit
+        override suspend fun moveTable(tableId: String, position: CanvasPosition) = Unit
         override suspend fun updateTableSettings(
             tableId: String,
             name: String,

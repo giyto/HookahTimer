@@ -29,7 +29,7 @@ import org.junit.Rule
 import org.junit.Test
 import ru.hznik.hookahtimer.hall.data.InMemoryHallRepository
 import ru.hznik.hookahtimer.hall.model.HallTable
-import ru.hznik.hookahtimer.hall.model.NormalizedPosition
+import ru.hznik.hookahtimer.hall.model.CanvasPosition
 import ru.hznik.hookahtimer.hall.model.TablePassage
 import ru.hznik.hookahtimer.hall.model.TableShape
 import ru.hznik.hookahtimer.hall.model.TableTimerState
@@ -48,8 +48,10 @@ class HallScreenTest {
         setStaticContent(HallUiState())
 
         composeRule.onNodeWithText("Столов пока нет").assertIsDisplayed()
+        composeRule.onNodeWithText("Зал").assertDoesNotExist()
         composeRule.onNodeWithTag(HallTestTags.TOGGLE_EDIT_MODE).assertIsDisplayed()
         composeRule.onNodeWithTag(HallTestTags.ADD_TABLE).assertDoesNotExist()
+        composeRule.onNodeWithTag(HallTestTags.CANVAS_GRID).assertExists()
     }
 
     @Test
@@ -57,7 +59,23 @@ class HallScreenTest {
         setStaticContent(HallUiState(isEditMode = true))
 
         composeRule.onNodeWithTag(HallTestTags.EDIT_MODE_INDICATOR).assertIsDisplayed()
-        composeRule.onNodeWithTag(HallTestTags.ADD_TABLE).assertIsDisplayed()
+        composeRule.onNodeWithTag(HallTestTags.ADD_TABLE)
+            .assertContentDescriptionEquals("Добавить стол")
+            .assertIsDisplayed()
+        composeRule.onNodeWithTag(HallTestTags.TOGGLE_EDIT_MODE)
+            .assertContentDescriptionEquals("Готово")
+        composeRule.onNodeWithTag(HallTestTags.TOGGLE_FULLSCREEN).assertDoesNotExist()
+    }
+
+    @Test
+    fun workModeShowsOnlyFullscreenAndEditFloatingActions() {
+        setStaticContent(HallUiState())
+
+        composeRule.onNodeWithTag(HallTestTags.TOGGLE_FULLSCREEN).assertIsDisplayed()
+        composeRule.onNodeWithTag(HallTestTags.TOGGLE_EDIT_MODE)
+            .assertContentDescriptionEquals("Редактировать")
+            .assertIsDisplayed()
+        composeRule.onNodeWithTag(HallTestTags.ADD_TABLE).assertDoesNotExist()
     }
 
     @Test
@@ -69,11 +87,53 @@ class HallScreenTest {
         )
 
         composeRule.onNodeWithTag(HallTestTags.TOGGLE_FULLSCREEN)
-            .assertTextEquals("Выйти из полного экрана")
+            .assertContentDescriptionEquals("Выйти из полного экрана")
             .assertHasClickAction()
             .performClick()
 
         assertEquals(HallAction.ToggleFullscreen, action)
+    }
+
+    @Test
+    fun pinchChangesViewportWithoutDispatchingTableAction() {
+        var action: HallAction? = null
+        setStaticContent(HallUiState(), onAction = { action = it })
+
+        composeRule.onNodeWithTag(HallTestTags.CANVAS_GRID).performTouchInput {
+            down(0, center + Offset(-80f, 0f))
+            down(1, center + Offset(80f, 0f))
+            moveTo(0, center + Offset(-180f, 0f))
+            moveTo(1, center + Offset(180f, 0f))
+            up(0)
+            up(1)
+        }
+        composeRule.waitForIdle()
+
+        val scale = composeRule.onNodeWithTag(HallTestTags.CANVAS_GRID)
+            .fetchSemanticsNode().config[CanvasScaleKey]
+        assertTrue(scale > 1f)
+        assertEquals(null, action)
+    }
+
+    @Test
+    fun freeAreaSwipePansTowardFarTableWithoutMovingIt() {
+        val table = HallTable(
+            id = "far",
+            name = "Дальний",
+            position = CanvasPosition(2_500f, 200f),
+        )
+        val actions = mutableListOf<HallAction>()
+        setStaticContent(HallUiState(tables = listOf(table)), onAction = actions::add)
+
+        composeRule.onNodeWithTag(HallTestTags.CANVAS_GRID).performTouchInput {
+            swipe(center, center + Offset(-400f, 0f), durationMillis = 500)
+        }
+        composeRule.waitForIdle()
+
+        val offsetX = composeRule.onNodeWithTag(HallTestTags.CANVAS_GRID)
+            .fetchSemanticsNode().config[CanvasOffsetXKey]
+        assertTrue(offsetX > 0f)
+        assertTrue(actions.none { it is HallAction.MoveTable })
     }
 
     @Test
@@ -107,7 +167,7 @@ class HallScreenTest {
                         id = "pill",
                         name = "VIP",
                         shape = TableShape.PILL,
-                        position = NormalizedPosition.of(0.7f, 0.7f),
+                        position = CanvasPosition(500f, 400f),
                     ),
                 ),
             ),
@@ -116,7 +176,7 @@ class HallScreenTest {
         composeRule.onNodeWithTag(HallTestTags.table("circle"))
             .assertContentDescriptionEquals("Круглый стол Обычный")
         composeRule.onNodeWithTag(HallTestTags.table("pill"))
-            .assertContentDescriptionEquals("Pill-стол VIP")
+            .assertContentDescriptionEquals("Стол-пилюля VIP")
     }
 
     @Test
@@ -137,6 +197,36 @@ class HallScreenTest {
 
         composeRule.onNodeWithTag(HallTestTags.table("id-1")).assertDoesNotExist()
         assertEquals(0, viewModel.state.value.tables.size)
+    }
+
+    @Test
+    fun deleteHandleIsOutsideAndOverlapsCircleAndPillTables() {
+        setStaticContent(
+            HallUiState(
+                tables = listOf(
+                    HallTable("circle", "Круг", position = CanvasPosition(100f, 120f)),
+                    HallTable(
+                        "pill",
+                        "Пилюля",
+                        TableShape.PILL,
+                        CanvasPosition(360f, 120f),
+                    ),
+                ),
+                isEditMode = true,
+            ),
+        )
+
+        listOf("circle", "pill").forEach { id ->
+            val table = composeRule.onNodeWithTag(HallTestTags.table(id))
+                .fetchSemanticsNode().boundsInRoot
+            val delete = composeRule.onNodeWithTag(HallTestTags.deleteTable(id))
+                .assertIsDisplayed()
+                .fetchSemanticsNode().boundsInRoot
+            assertTrue(delete.top < table.top)
+            assertTrue(delete.bottom > table.top)
+            assertTrue(delete.right > table.right)
+            assertTrue(delete.left < table.right)
+        }
     }
 
     @Test
@@ -161,7 +251,7 @@ class HallScreenTest {
     }
 
     @Test
-    fun dragInEditModeMovesTableAndClampsPosition() {
+    fun dragInEditModeMovesTableInLogicalSpace() {
         val viewModel = setViewModelContent()
         composeRule.onNodeWithTag(HallTestTags.TOGGLE_EDIT_MODE).performClick()
         composeRule.onNodeWithTag(HallTestTags.ADD_TABLE).performClick()
@@ -176,8 +266,8 @@ class HallScreenTest {
         composeRule.waitForIdle()
 
         val position = viewModel.state.value.tables.single().position
-        assertEquals(1f, position.x, POSITION_DELTA)
-        assertEquals(1f, position.y, POSITION_DELTA)
+        assertTrue(position.x > CanvasPosition.Default.x)
+        assertTrue(position.y > CanvasPosition.Default.y)
     }
 
     @Test
@@ -273,27 +363,27 @@ class HallScreenTest {
                         id = "running",
                         name = "Работает",
                         shape = TableShape.PILL,
-                        position = NormalizedPosition.of(0.15f, 0.2f),
+                        position = CanvasPosition(80f, 100f),
                         passages = passages,
                         timerState = TableTimerState.Running("p1", 150_001L),
                     ),
                     HallTable(
                         id = "overdue",
                         name = "Просрочен",
-                        position = NormalizedPosition.of(0.5f, 0.5f),
+                        position = CanvasPosition(360f, 260f),
                         passages = passages,
                         timerState = TableTimerState.Running("p2", 60_001L),
                     ),
                     HallTable(
                         id = "idle",
                         name = "Свободен",
-                        position = NormalizedPosition.of(0.15f, 0.8f),
+                        position = CanvasPosition(80f, 500f),
                         passages = passages,
                     ),
                     HallTable(
                         id = "completed",
                         name = "Готов",
-                        position = NormalizedPosition.of(0.85f, 0.8f),
+                        position = CanvasPosition(650f, 500f),
                         passages = passages,
                         timerState = TableTimerState.Completed,
                     ),
@@ -339,7 +429,7 @@ class HallScreenTest {
             .assertTextEquals("×")
         composeRule.onNodeWithTag(HallTestTags.table("running"))
             .assertContentDescriptionEquals(
-                "Pill-стол Работает, проходка 1 из 2, осталось 00:30",
+                "Стол-пилюля Работает, проходка 1 из 2, осталось 00:30",
             )
         composeRule.onNodeWithTag(HallTestTags.table("overdue"))
             .assertContentDescriptionEquals(
@@ -371,7 +461,7 @@ class HallScreenTest {
                 tables = listOf(
                     table.copy(
                         id = "running",
-                        position = NormalizedPosition.of(0.15f, 0.2f),
+                        position = CanvasPosition(80f, 100f),
                         timerState = TableTimerState.Running(
                             table.passages.first().id,
                             1_801_000L,
@@ -379,7 +469,7 @@ class HallScreenTest {
                     ),
                     table.copy(
                         id = "overdue",
-                        position = NormalizedPosition.of(0.5f, 0.5f),
+                        position = CanvasPosition(360f, 260f),
                         timerState = TableTimerState.Running(
                             table.passages.first().id,
                             500L,
@@ -387,7 +477,7 @@ class HallScreenTest {
                     ),
                     table.copy(
                         id = "completed",
-                        position = NormalizedPosition.of(0.85f, 0.8f),
+                        position = CanvasPosition(650f, 500f),
                         timerState = TableTimerState.Completed,
                     ),
                 ),
@@ -486,9 +576,9 @@ class HallScreenTest {
                 id = "table-$index",
                 name = "Стол ${index + 1}",
                 shape = if (index % 2 == 0) TableShape.CIRCLE else TableShape.PILL,
-                position = NormalizedPosition.of(
-                    x = (index % 6) / 5f,
-                    y = (index / 6) / 4f,
+                position = CanvasPosition(
+                    x = (index % 6) * 220f,
+                    y = (index / 6) * 170f,
                 ),
                 passages = passages,
                 timerState = timerState,
@@ -520,24 +610,24 @@ class HallScreenTest {
             HallTable(
                 id = "top-left",
                 name = "Слева сверху",
-                position = NormalizedPosition.of(0f, 0f),
+                position = CanvasPosition(0f, 0f),
             ),
             HallTable(
                 id = "top-right",
                 name = "Справа сверху",
                 shape = TableShape.PILL,
-                position = NormalizedPosition.of(1f, 0f),
+                position = CanvasPosition(800f, 0f),
             ),
             HallTable(
                 id = "bottom-left",
                 name = "Слева снизу",
                 shape = TableShape.PILL,
-                position = NormalizedPosition.of(0f, 1f),
+                position = CanvasPosition(0f, 600f),
             ),
             HallTable(
                 id = "bottom-right",
                 name = "Справа снизу",
-                position = NormalizedPosition.of(1f, 1f),
+                position = CanvasPosition(800f, 600f),
             ),
         )
         composeRule.setContent {
@@ -600,7 +690,4 @@ class HallScreenTest {
         return viewModel
     }
 
-    private companion object {
-        const val POSITION_DELTA = 0.01f
-    }
 }

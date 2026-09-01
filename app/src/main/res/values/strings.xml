@@ -15,7 +15,7 @@
     <string name="delete">Удалить</string>
     <string name="cancel">Отмена</string>
     <string name="circle_table_description">Круглый стол %1$s</string>
-    <string name="pill_table_description">Pill-стол %1$s</string>
+    <string name="pill_table_description">Стол-пилюля %1$s</string>
     <string name="table_passage_indicator">%1$d/%2$d</string>
     <string name="running_table_description">%1$s, проходка %2$d из %3$d, осталось %4$s</string>
     <string name="overdue_table_description">%1$s, проходка %2$d из %3$d, просрочка %4$s</string>
@@ -25,7 +25,8 @@
     <string name="table_name_error">Введите название стола</string>
     <string name="table_shape">Форма стола</string>
     <string name="circle_shape">Круг</string>
-    <string name="pill_shape">Pill</string>
+    <string name="pill_shape">Пилюля</string>
+    <string name="canvas_grid_description">Сетка рабочего пространства</string>
     <string name="passages_title">Проходки</string>
     <string name="passage_number">Проходка %1$d</string>
     <string name="passage_duration">Длительность</string>

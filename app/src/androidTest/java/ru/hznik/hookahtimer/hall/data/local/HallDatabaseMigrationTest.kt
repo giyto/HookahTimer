@@ -1,0 +1,89 @@
+package ru.hznik.hookahtimer.hall.data.local
+
+import androidx.room.testing.MigrationTestHelper
+import androidx.test.platform.app.InstrumentationRegistry
+import org.junit.Assert.assertEquals
+import org.junit.Rule
+import org.junit.Test
+
+class HallDatabaseMigrationTest {
+    @get:Rule
+    val helper = MigrationTestHelper(
+        InstrumentationRegistry.getInstrumentation(),
+        HookahTimerDatabase::class.java,
+    )
+
+    @Test
+    fun migration1To2PreservesTablesPassagesAndTimersAndCreatesCanvasCoordinates() {
+        helper.createDatabase(TEST_DATABASE, 1).apply {
+            execSQL(
+                """
+                INSERT INTO hall_tables(
+                    table_id, name, shape, position_x, position_y, sort_order,
+                    timer_status, current_passage_id, ends_at_epoch_millis
+                ) VALUES ('circle', 'Круг', 'CIRCLE', 0.25, 0.75, 0, 'RUNNING', 'circle-p1', 123456)
+                """.trimIndent(),
+            )
+            execSQL(
+                """
+                INSERT INTO hall_tables(
+                    table_id, name, shape, position_x, position_y, sort_order,
+                    timer_status, current_passage_id, ends_at_epoch_millis
+                ) VALUES ('pill', 'Пилюля', 'PILL', 0.5, 0.25, 1, 'IDLE', NULL, NULL)
+                """.trimIndent(),
+            )
+            execSQL(
+                "INSERT INTO table_passages(passage_id, table_id, duration_minutes, sort_order) " +
+                    "VALUES ('circle-p1', 'circle', 30, 0)",
+            )
+            execSQL(
+                "INSERT INTO table_passages(passage_id, table_id, duration_minutes, sort_order) " +
+                    "VALUES ('pill-p1', 'pill', 45, 0)",
+            )
+            execSQL(
+                "INSERT INTO hall_metadata(id, next_table_number) VALUES ('hall', 3)",
+            )
+            close()
+        }
+
+        val migrated = helper.runMigrationsAndValidate(
+            TEST_DATABASE,
+            2,
+            true,
+            MIGRATION_1_2,
+        )
+
+        migrated.query(
+            "SELECT table_id, canvas_x, canvas_y, timer_status, current_passage_id, " +
+                "ends_at_epoch_millis FROM hall_tables ORDER BY sort_order",
+        ).use { cursor ->
+            cursor.moveToFirst()
+            assertEquals("circle", cursor.getString(0))
+            assertEquals(272f, cursor.getFloat(1), DELTA)
+            assertEquals(516f, cursor.getFloat(2), DELTA)
+            assertEquals("RUNNING", cursor.getString(3))
+            assertEquals("circle-p1", cursor.getString(4))
+            assertEquals(123_456L, cursor.getLong(5))
+
+            cursor.moveToNext()
+            assertEquals("pill", cursor.getString(0))
+            assertEquals(508f, cursor.getFloat(1), DELTA)
+            assertEquals(176f, cursor.getFloat(2), DELTA)
+            assertEquals("IDLE", cursor.getString(3))
+        }
+        migrated.query("SELECT COUNT(*) FROM table_passages").use { cursor ->
+            cursor.moveToFirst()
+            assertEquals(2, cursor.getInt(0))
+        }
+        migrated.query("SELECT next_table_number FROM hall_metadata WHERE id = 'hall'").use { cursor ->
+            cursor.moveToFirst()
+            assertEquals(3, cursor.getInt(0))
+        }
+        migrated.close()
+    }
+
+    private companion object {
+        const val TEST_DATABASE = "hall-migration-test"
+        const val DELTA = 0.001f
+    }
+}

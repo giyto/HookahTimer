@@ -45,11 +45,20 @@ interface HallDao {
     @Query(
         """
         UPDATE hall_tables
-        SET position_x = :positionX, position_y = :positionY
+        SET position_x = :positionX,
+            position_y = :positionY,
+            canvas_x = :canvasX,
+            canvas_y = :canvasY
         WHERE table_id = :tableId
         """,
     )
-    suspend fun updatePosition(tableId: String, positionX: Float, positionY: Float)
+    suspend fun updatePosition(
+        tableId: String,
+        positionX: Float,
+        positionY: Float,
+        canvasX: Float,
+        canvasY: Float,
+    )
 
     @Query(
         """
