@@ -126,11 +126,11 @@ class HookahTimerAppTest {
         composeRule.waitForIdle()
         assertEquals("hall:false", controller.calls.last())
 
-        composeRule.onNodeWithTag(HallTestTags.TOGGLE_FULLSCREEN).performClick()
+        performHallAction(HallTestTags.TOGGLE_FULLSCREEN)
         composeRule.waitForIdle()
         assertEquals("hall:true", controller.calls.last())
 
-        composeRule.onNodeWithTag(HallTestTags.TOGGLE_EDIT_MODE).performClick()
+        performHallAction(HallTestTags.TOGGLE_EDIT_MODE)
         composeRule.onNodeWithTag(HallTestTags.table("table-1")).performClick()
         composeRule.waitForIdle()
         assertEquals("hall:true", controller.calls.last())
@@ -161,6 +161,13 @@ class HookahTimerAppTest {
         TablePassage("passage-1", 30),
         TablePassage("passage-2", 30),
     )
+
+    private fun performHallAction(testTag: String) {
+        composeRule.onNodeWithTag(HallTestTags.ACTION_MENU).performClick()
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag(testTag).performClick()
+        composeRule.waitForIdle()
+    }
 
     private fun editName(value: String) {
         composeRule.onNodeWithTag(TableSettingsTestTags.NAME)

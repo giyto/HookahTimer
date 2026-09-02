@@ -1,6 +1,7 @@
 package ru.hznik.hookahtimer.hall.model
 
 import kotlin.math.max
+import kotlin.math.ceil
 
 data class CanvasRect(
     val left: Float,
@@ -77,6 +78,21 @@ data class CanvasViewport(
             ),
         )
     }
+
+    fun visibleRect(viewportSize: CanvasSize): CanvasRect {
+        val safeScale = scale.coerceIn(MIN_CANVAS_SCALE, MAX_CANVAS_SCALE)
+        return CanvasRect(
+            left = offset.x,
+            top = offset.y,
+            right = offset.x + viewportSize.width / safeScale,
+            bottom = offset.y + viewportSize.height / safeScale,
+        )
+    }
+
+    fun center(viewportSize: CanvasSize): CanvasPosition = CanvasPosition(
+        x = offset.x + viewportSize.width / scale / 2f,
+        y = offset.y + viewportSize.height / scale / 2f,
+    )
 }
 
 data class GridDetail(
@@ -102,11 +118,69 @@ fun calculateCanvasContentBounds(
     val contentRight = items.maxOf { it.position.x + it.width }
     val contentBottom = items.maxOf { it.position.y + it.height }
     return CanvasRect(
-        left = if (contentLeft < 0f) contentLeft - margin else 0f,
-        top = if (contentTop < 0f) contentTop - margin else 0f,
-        right = max(fallbackRight, contentRight + margin),
-        bottom = max(fallbackBottom, contentBottom + margin),
+        left = contentLeft - margin,
+        top = contentTop - margin,
+        right = contentRight + margin,
+        bottom = contentBottom + margin,
     )
+}
+
+fun findNearestAvailableTablePosition(
+    preferredCenter: CanvasPosition,
+    tableSize: CanvasSize,
+    occupiedItems: List<CanvasItemBounds>,
+    visibleBounds: CanvasRect,
+    spacing: Float = TABLE_PLACEMENT_SPACING,
+    step: Float = MINOR_GRID_STEP,
+): CanvasPosition {
+    require(spacing.isFinite() && spacing >= 0f)
+    require(step.isFinite() && step > 0f)
+
+    fun positionForCenter(centerX: Float, centerY: Float): CanvasPosition {
+        val maxX = (visibleBounds.right - tableSize.width).coerceAtLeast(visibleBounds.left)
+        val maxY = (visibleBounds.bottom - tableSize.height).coerceAtLeast(visibleBounds.top)
+        return CanvasPosition(
+            x = (centerX - tableSize.width / 2f).coerceIn(visibleBounds.left, maxX),
+            y = (centerY - tableSize.height / 2f).coerceIn(visibleBounds.top, maxY),
+        )
+    }
+
+    fun isAvailable(position: CanvasPosition): Boolean {
+        val candidate = CanvasItemBounds(position, tableSize.width, tableSize.height)
+        return occupiedItems.none { occupied -> candidate.overlaps(occupied, spacing) }
+    }
+
+    val preferredPosition = positionForCenter(preferredCenter.x, preferredCenter.y)
+    if (isAvailable(preferredPosition)) return preferredPosition
+
+    val maxRing = ceil(max(visibleBounds.width, visibleBounds.height) / step).toInt() + 1
+    for (ring in 1..maxRing) {
+        for (x in -ring..ring) {
+            val top = positionForCenter(
+                preferredCenter.x + x * step,
+                preferredCenter.y - ring * step,
+            )
+            if (isAvailable(top)) return top
+            val bottom = positionForCenter(
+                preferredCenter.x + x * step,
+                preferredCenter.y + ring * step,
+            )
+            if (isAvailable(bottom)) return bottom
+        }
+        for (y in (-ring + 1) until ring) {
+            val left = positionForCenter(
+                preferredCenter.x - ring * step,
+                preferredCenter.y + y * step,
+            )
+            if (isAvailable(left)) return left
+            val right = positionForCenter(
+                preferredCenter.x + ring * step,
+                preferredCenter.y + y * step,
+            )
+            if (isAvailable(right)) return right
+        }
+    }
+    return preferredPosition
 }
 
 fun gridDetailForScale(scale: Float): GridDetail {
@@ -121,9 +195,16 @@ private fun clampAxis(value: Float, start: Float, end: Float, visibleSize: Float
     return value.coerceIn(start, end - visibleSize)
 }
 
+private fun CanvasItemBounds.overlaps(other: CanvasItemBounds, spacing: Float): Boolean =
+    position.x < other.position.x + other.width + spacing &&
+        position.x + width + spacing > other.position.x &&
+        position.y < other.position.y + other.height + spacing &&
+        position.y + height + spacing > other.position.y
+
 const val MIN_CANVAS_SCALE = 0.35f
 const val MAX_CANVAS_SCALE = 2.5f
 const val CANVAS_CONTENT_MARGIN = 240f
 const val MINOR_GRID_STEP = 40f
 const val MAJOR_GRID_STEP = 200f
 const val MINOR_GRID_VISIBLE_DP = 16f
+const val TABLE_PLACEMENT_SPACING = 16f

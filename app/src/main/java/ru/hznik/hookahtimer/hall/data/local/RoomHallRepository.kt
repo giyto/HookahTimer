@@ -39,7 +39,11 @@ class RoomHallRepository(
         }
         .distinctUntilChanged()
 
-    override suspend fun addTable(tableId: String, passageIds: List<String>) {
+    override suspend fun addTable(
+        tableId: String,
+        passageIds: List<String>,
+        position: CanvasPosition?,
+    ) {
         require(passageIds.size == TablePassage.DEFAULT_PASSAGE_COUNT)
         database.withTransaction {
             if (dao.getTable(tableId) != null) return@withTransaction
@@ -48,7 +52,7 @@ class RoomHallRepository(
             val table = HallTable(
                 id = tableId,
                 name = "Стол $number",
-                position = initialTablePosition(number),
+                position = position ?: initialTablePosition(number),
                 passages = TablePassage.defaultList(passageIds.iterator()::next),
             )
             val persisted = table.toPersisted(

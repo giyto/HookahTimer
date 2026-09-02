@@ -9,6 +9,11 @@
     <string name="empty_hall_title">Столов пока нет</string>
     <string name="empty_hall_message">Включите режим редактирования и добавьте первый стол</string>
     <string name="add_table">Добавить стол</string>
+    <string name="open_hall_actions">Открыть действия зала</string>
+    <string name="close_hall_actions">Закрыть действия зала</string>
+    <string name="lock_canvas">Зафиксировать рабочую область</string>
+    <string name="unlock_canvas">Разблокировать рабочую область</string>
+    <string name="venue_logo">Логотип заведения</string>
     <string name="delete_table">Удалить %1$s</string>
     <string name="delete_table_title">Удалить стол?</string>
     <string name="delete_table_message">Стол «%1$s» исчезнет со схемы зала.</string>

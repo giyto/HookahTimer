@@ -29,18 +29,29 @@ class HallViewModelTest {
         val ids = ArrayDeque(listOf("id-1", "id-2"))
         val viewModel = viewModel(idFactory = { ids.removeFirst() })
 
-        viewModel.onAction(HallAction.AddTable)
+        viewModel.onAction(HallAction.AddTable())
         assertTrue(viewModel.state.value.tables.isEmpty())
 
         viewModel.onAction(HallAction.ToggleEditMode)
-        viewModel.onAction(HallAction.AddTable)
-        viewModel.onAction(HallAction.AddTable)
+        viewModel.onAction(HallAction.AddTable())
+        viewModel.onAction(HallAction.AddTable())
 
         val tables = viewModel.state.value.tables
         assertEquals(listOf("Стол 1", "Стол 2"), tables.map { it.name })
         assertNotEquals(tables[0].id, tables[1].id)
         assertTrue(tables.all { it.shape == TableShape.CIRCLE })
         assertTrue(tables.all { table -> table.passages.map { it.durationMinutes } == listOf(30, 30) })
+    }
+
+    @Test
+    fun addUsesPositionProvidedByCurrentCanvasViewport() {
+        val viewModel = viewModel(idFactory = { "id-1" })
+        val viewportPosition = CanvasPosition(840f, 460f)
+
+        viewModel.onAction(HallAction.ToggleEditMode)
+        viewModel.onAction(HallAction.AddTable(viewportPosition))
+
+        assertEquals(viewportPosition, viewModel.state.value.tables.single().position)
     }
 
     @Test
@@ -52,8 +63,8 @@ class HallViewModelTest {
             passageIdFactory = { passageIds.removeFirst() },
         )
         viewModel.onAction(HallAction.ToggleEditMode)
-        viewModel.onAction(HallAction.AddTable)
-        viewModel.onAction(HallAction.AddTable)
+        viewModel.onAction(HallAction.AddTable())
+        viewModel.onAction(HallAction.AddTable())
 
         val ids = viewModel.state.value.tables.flatMap { table -> table.passages.map { it.id } }
         assertEquals(listOf("p-1", "p-2", "p-3", "p-4"), ids)
@@ -65,10 +76,10 @@ class HallViewModelTest {
         val ids = ArrayDeque(listOf("id-1", "id-2"))
         val viewModel = viewModel(idFactory = { ids.removeFirst() })
         viewModel.onAction(HallAction.ToggleEditMode)
-        viewModel.onAction(HallAction.AddTable)
+        viewModel.onAction(HallAction.AddTable())
         viewModel.onAction(HallAction.RequestDelete("id-1"))
         viewModel.onAction(HallAction.ConfirmDelete)
-        viewModel.onAction(HallAction.AddTable)
+        viewModel.onAction(HallAction.AddTable())
 
         assertEquals(listOf("Стол 2"), viewModel.state.value.tables.map { it.name })
     }
@@ -79,7 +90,7 @@ class HallViewModelTest {
         val editPosition = CanvasPosition(x = 900f, y = 100f)
         val forbiddenPosition = CanvasPosition(x = 200f, y = 800f)
         viewModel.onAction(HallAction.ToggleEditMode)
-        viewModel.onAction(HallAction.AddTable)
+        viewModel.onAction(HallAction.AddTable())
         viewModel.onAction(HallAction.MoveTable("id-1", editPosition))
 
         assertEquals(editPosition, viewModel.state.value.tables.single().position)
@@ -108,8 +119,8 @@ class HallViewModelTest {
         val ids = ArrayDeque(listOf("id-1", "id-2"))
         val viewModel = viewModel(idFactory = { ids.removeFirst() })
         viewModel.onAction(HallAction.ToggleEditMode)
-        viewModel.onAction(HallAction.AddTable)
-        viewModel.onAction(HallAction.AddTable)
+        viewModel.onAction(HallAction.AddTable())
+        viewModel.onAction(HallAction.AddTable())
         viewModel.onAction(HallAction.RequestDelete("id-1"))
         viewModel.onAction(HallAction.ConfirmDelete)
 
@@ -144,8 +155,8 @@ class HallViewModelTest {
         val tableIds = ArrayDeque(listOf("id-1", "id-2"))
         val viewModel = viewModel(idFactory = { tableIds.removeFirst() })
         viewModel.onAction(HallAction.ToggleEditMode)
-        viewModel.onAction(HallAction.AddTable)
-        viewModel.onAction(HallAction.AddTable)
+        viewModel.onAction(HallAction.AddTable())
+        viewModel.onAction(HallAction.AddTable())
         val position = viewModel.state.value.tables.first().position
         val passages = listOf(TablePassage(id = "custom", durationMinutes = 45))
 
@@ -176,8 +187,8 @@ class HallViewModelTest {
             idFactory = { tableIds.removeFirst() },
         )
         viewModel.onAction(HallAction.ToggleEditMode)
-        viewModel.onAction(HallAction.AddTable)
-        viewModel.onAction(HallAction.AddTable)
+        viewModel.onAction(HallAction.AddTable())
+        viewModel.onAction(HallAction.AddTable())
         viewModel.onAction(HallAction.ToggleEditMode)
 
         viewModel.onAction(HallAction.AdvanceTimer("id-1"))
@@ -422,7 +433,7 @@ class HallViewModelTest {
         idFactory = { "id-1" },
     ).also {
         it.onAction(HallAction.ToggleEditMode)
-        it.onAction(HallAction.AddTable)
+        it.onAction(HallAction.AddTable())
     }
 
     private fun viewModel(
@@ -443,7 +454,11 @@ class HallViewModelTest {
         val release = CompletableDeferred<Unit>()
         var advanceCalls = 0
 
-        override suspend fun addTable(tableId: String, passageIds: List<String>) = Unit
+        override suspend fun addTable(
+            tableId: String,
+            passageIds: List<String>,
+            position: CanvasPosition?,
+        ) = Unit
         override suspend fun moveTable(tableId: String, position: CanvasPosition) = Unit
         override suspend fun updateTableSettings(
             tableId: String,

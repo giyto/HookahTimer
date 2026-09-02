@@ -15,12 +15,12 @@ class HallCanvasGeometryTest {
     }
 
     @Test
-    fun compactBoundsKeepViewportAsMinimum() {
+    fun compactBoundsAreSymmetricAroundContent() {
         val bounds = calculateCanvasContentBounds(
             items = listOf(CanvasItemBounds(CanvasPosition(100f, 80f), 112f, 112f)),
             viewportSize = CanvasSize(800f, 600f),
         )
-        assertEquals(CanvasRect(0f, 0f, 800f, 600f), bounds)
+        assertEquals(CanvasRect(-140f, -160f, 452f, 432f), bounds)
     }
 
     @Test
@@ -65,7 +65,89 @@ class HallCanvasGeometryTest {
     @Test
     fun minorGridDisappearsWhenItsScreenStepIsTooSmall() {
         assertFalse(gridDetailForScale(MIN_CANVAS_SCALE).showMinorLines)
+        assertFalse(gridDetailForScale(0.399f).showMinorLines)
+        assertTrue(gridDetailForScale(0.4f).showMinorLines)
         assertTrue(gridDetailForScale(1f).showMinorLines)
         assertEquals(200f, gridDetailForScale(1f).majorStep, 0f)
+    }
+
+    @Test
+    fun viewportReportsVisibleRectAndWorldCenter() {
+        val viewport = CanvasViewport(
+            scale = 2f,
+            offset = CanvasPosition(100f, 50f),
+        )
+        val size = CanvasSize(800f, 600f)
+
+        assertEquals(CanvasRect(100f, 50f, 500f, 350f), viewport.visibleRect(size))
+        assertEquals(CanvasPosition(300f, 200f), viewport.center(size))
+    }
+
+    @Test
+    fun freeTablePlacementCentersTableInVisibleBounds() {
+        val result = findNearestAvailableTablePosition(
+            preferredCenter = CanvasPosition(500f, 400f),
+            tableSize = CanvasSize(112f, 112f),
+            occupiedItems = emptyList(),
+            visibleBounds = CanvasRect(100f, 100f, 900f, 700f),
+        )
+
+        assertEquals(CanvasPosition(444f, 344f), result)
+    }
+
+    @Test
+    fun occupiedCenterUsesNearestVisibleFreeGridPosition() {
+        val occupied = CanvasItemBounds(CanvasPosition(444f, 344f), 112f, 112f)
+
+        val result = findNearestAvailableTablePosition(
+            preferredCenter = CanvasPosition(500f, 400f),
+            tableSize = CanvasSize(112f, 112f),
+            occupiedItems = listOf(occupied),
+            visibleBounds = CanvasRect(100f, 100f, 900f, 700f),
+        )
+
+        assertTrue(result != occupied.position)
+        assertTrue(result.x >= 100f && result.x + 112f <= 900f)
+        assertTrue(result.y >= 100f && result.y + 112f <= 700f)
+    }
+
+    @Test
+    fun fullViewportFallsBackToClampedCenter() {
+        val result = findNearestAvailableTablePosition(
+            preferredCenter = CanvasPosition(100f, 100f),
+            tableSize = CanvasSize(112f, 112f),
+            occupiedItems = listOf(CanvasItemBounds(CanvasPosition(0f, 0f), 200f, 200f)),
+            visibleBounds = CanvasRect(0f, 0f, 200f, 200f),
+        )
+
+        assertEquals(CanvasPosition(44f, 44f), result)
+    }
+
+    @Test
+    fun compactContentCannotBePannedIntoEmptySpace() {
+        val bounds = CanvasRect(-140f, -160f, 452f, 432f)
+        val size = CanvasSize(800f, 600f)
+
+        val first = CanvasViewport(offset = CanvasPosition(-10_000f, -10_000f))
+            .clampTo(bounds, size)
+        val second = CanvasViewport(offset = CanvasPosition(10_000f, 10_000f))
+            .clampTo(bounds, size)
+
+        assertEquals(first, second)
+        assertEquals(CanvasPosition(-244f, -164f), first.offset)
+    }
+
+    @Test
+    fun largeContentCanReachBothExtremeEdges() {
+        val bounds = CanvasRect(-500f, -300f, 1_500f, 1_300f)
+        val size = CanvasSize(800f, 600f)
+
+        val topLeft = CanvasViewport(offset = CanvasPosition(-50_000f, -50_000f))
+            .clampTo(bounds, size)
+        val bottomRight = CanvasViewport(offset = CanvasPosition(50_000f, 50_000f))
+            .clampTo(bounds, size)
+
+        assertEquals(CanvasPosition(-500f, -300f), topLeft.offset)
+        assertEquals(CanvasPosition(700f, 700f), bottomRight.offset)
     }
 }

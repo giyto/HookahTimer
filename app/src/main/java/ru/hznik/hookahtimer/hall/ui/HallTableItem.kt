@@ -115,7 +115,7 @@ internal fun HallTableItem(
         else -> Modifier
     }
     val dragModifier = if (isEditMode) {
-        Modifier.pointerInput(table.id, table.position) {
+        Modifier.pointerInput(table.id, table.position, viewport.scale) {
             var workingPosition = latestPosition
             detectDragGestures(
                 onDragStart = {
@@ -125,8 +125,8 @@ internal fun HallTableItem(
                 onDrag = { change, dragAmount ->
                     change.consume()
                     workingPosition = CanvasPosition.of(
-                        x = workingPosition.x + dragAmount.x / density.density,
-                        y = workingPosition.y + dragAmount.y / density.density,
+                        x = workingPosition.x + dragAmount.x / density.density / viewport.scale,
+                        y = workingPosition.y + dragAmount.y / density.density / viewport.scale,
                     )
                     draggedPosition = workingPosition
                 },

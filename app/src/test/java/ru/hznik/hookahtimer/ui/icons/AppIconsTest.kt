@@ -6,6 +6,7 @@ import org.junit.Test
 class AppIconsTest {
     @Test
     fun allMaterialIconPathsAreValid() {
+        assertEquals("Menu", AppIcons.Menu.name)
         assertEquals("Add", AppIcons.Add.name)
         assertEquals("Check", AppIcons.Check.name)
         assertEquals("Edit", AppIcons.Edit.name)
@@ -13,5 +14,7 @@ class AppIconsTest {
         assertEquals("Fullscreen exit", AppIcons.FullscreenExit.name)
         assertEquals("Close", AppIcons.Close.name)
         assertEquals("Delete", AppIcons.Delete.name)
+        assertEquals("Lock", AppIcons.Lock.name)
+        assertEquals("Lock open", AppIcons.LockOpen.name)
     }
 }

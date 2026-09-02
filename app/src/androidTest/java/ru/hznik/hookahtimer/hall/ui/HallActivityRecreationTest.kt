@@ -46,8 +46,8 @@ class HallActivityRecreationTest {
 
     @Test
     fun activityRecreationKeepsTablesInViewModel() {
-        composeRule.onNodeWithTag(HallTestTags.TOGGLE_EDIT_MODE).performClick()
-        composeRule.onNodeWithTag(HallTestTags.ADD_TABLE).performClick()
+        performHallAction(HallTestTags.TOGGLE_EDIT_MODE)
+        performHallAction(HallTestTags.ADD_TABLE)
         waitForText("Стол 1")
         composeRule.onNodeWithText("Стол 1").assertIsDisplayed()
 
@@ -59,8 +59,8 @@ class HallActivityRecreationTest {
 
     @Test
     fun activityRecreationKeepsOpenSettingsDraft() {
-        composeRule.onNodeWithTag(HallTestTags.TOGGLE_EDIT_MODE).performClick()
-        composeRule.onNodeWithTag(HallTestTags.ADD_TABLE).performClick()
+        performHallAction(HallTestTags.TOGGLE_EDIT_MODE)
+        performHallAction(HallTestTags.ADD_TABLE)
         waitForText("Стол 1")
         val firstPassageId = findFirstPassageId()
         composeRule.onNodeWithText("Стол 1").performClick()
@@ -78,11 +78,11 @@ class HallActivityRecreationTest {
 
     @Test
     fun activityRecreationRestoresRunningTimerFromRoom() {
-        composeRule.onNodeWithTag(HallTestTags.TOGGLE_EDIT_MODE).performClick()
-        composeRule.onNodeWithTag(HallTestTags.ADD_TABLE).performClick()
+        performHallAction(HallTestTags.TOGGLE_EDIT_MODE)
+        performHallAction(HallTestTags.ADD_TABLE)
         waitForText("Стол 1")
         val tableId = findOnlyTableId()
-        composeRule.onNodeWithTag(HallTestTags.TOGGLE_EDIT_MODE).performClick()
+        performHallAction(HallTestTags.TOGGLE_EDIT_MODE)
         composeRule.onNodeWithTag(HallTestTags.table(tableId)).performClick()
         composeRule.waitUntil(timeoutMillis = 5_000L) {
             composeRule.onAllNodesWithTag(
@@ -117,8 +117,8 @@ class HallActivityRecreationTest {
         composeRule.activityRule.scenario.onActivity { activity ->
             assertTrue(activity.window.hasKeepScreenOnFlag())
         }
-        composeRule.onNodeWithTag(HallTestTags.TOGGLE_EDIT_MODE).performClick()
-        composeRule.onNodeWithTag(HallTestTags.ADD_TABLE).performClick()
+        performHallAction(HallTestTags.TOGGLE_EDIT_MODE)
+        performHallAction(HallTestTags.ADD_TABLE)
         waitForText("Стол 1")
         composeRule.onNodeWithText("Стол 1").performClick()
         composeRule.waitForIdle()
@@ -135,20 +135,36 @@ class HallActivityRecreationTest {
 
     @Test
     fun activityRecreationKeepsFullscreenSessionChoice() {
-        composeRule.onNodeWithTag(HallTestTags.TOGGLE_FULLSCREEN).performClick()
+        performHallAction(HallTestTags.TOGGLE_FULLSCREEN)
+        openActionMenu()
         composeRule.onNodeWithTag(HallTestTags.TOGGLE_FULLSCREEN)
             .assertContentDescriptionEquals("Выйти из полного экрана")
 
         composeRule.activityRule.scenario.recreate()
 
+        openActionMenu()
         composeRule.onNodeWithTag(HallTestTags.TOGGLE_FULLSCREEN)
             .assertContentDescriptionEquals("Выйти из полного экрана")
     }
 
     @Test
+    fun activityRecreationKeepsViewportLockSessionChoice() {
+        performHallAction(HallTestTags.TOGGLE_VIEWPORT_LOCK)
+        composeRule.onNodeWithTag(HallTestTags.VIEWPORT_LOCKED_INDICATOR).assertIsDisplayed()
+
+        composeRule.activityRule.scenario.recreate()
+
+        composeRule.onNodeWithTag(HallTestTags.VIEWPORT_LOCKED_INDICATOR).assertIsDisplayed()
+        assertTrue(
+            composeRule.onNodeWithTag(HallTestTags.CANVAS_GRID)
+                .fetchSemanticsNode().config[CanvasLockedKey],
+        )
+    }
+
+    @Test
     fun activityRecreationKeepsActiveDurationEditor() {
-        composeRule.onNodeWithTag(HallTestTags.TOGGLE_EDIT_MODE).performClick()
-        composeRule.onNodeWithTag(HallTestTags.ADD_TABLE).performClick()
+        performHallAction(HallTestTags.TOGGLE_EDIT_MODE)
+        performHallAction(HallTestTags.ADD_TABLE)
         waitForText("Стол 1")
         val firstPassageId = findFirstPassageId()
         composeRule.onNodeWithText("Стол 1").performClick()
@@ -199,6 +215,17 @@ class HallActivityRecreationTest {
         composeRule.waitUntil(timeoutMillis = 5_000L) {
             composeRule.onAllNodesWithText(text).fetchSemanticsNodes().isNotEmpty()
         }
+    }
+
+    private fun openActionMenu() {
+        composeRule.onNodeWithTag(HallTestTags.ACTION_MENU).performClick()
+        composeRule.waitForIdle()
+    }
+
+    private fun performHallAction(testTag: String) {
+        openActionMenu()
+        composeRule.onNodeWithTag(testTag).performClick()
+        composeRule.waitForIdle()
     }
 
     private fun findOnlyTableId(): String {

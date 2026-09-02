@@ -14,6 +14,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import ru.hznik.hookahtimer.hall.data.HallRepository
+import ru.hznik.hookahtimer.hall.model.CanvasPosition
 import ru.hznik.hookahtimer.hall.model.SystemTimeProvider
 import ru.hznik.hookahtimer.hall.model.TablePassage
 import ru.hznik.hookahtimer.hall.model.TableTimerState
@@ -49,7 +50,7 @@ class HallViewModel(
         when (action) {
             HallAction.ToggleEditMode -> toggleEditMode()
             HallAction.ToggleFullscreen -> toggleFullscreen()
-            HallAction.AddTable -> addTable()
+            is HallAction.AddTable -> addTable(action.position)
             is HallAction.MoveTable -> moveTable(action)
             is HallAction.RequestDelete -> requestDelete(action.tableId)
             is HallAction.UpdateTableSettings -> updateTableSettings(action)
@@ -74,12 +75,12 @@ class HallViewModel(
         }
     }
 
-    private fun addTable() {
+    private fun addTable(position: CanvasPosition) {
         if (!editorState.value.isEditMode) return
         val tableId = idFactory()
         val passageIds = List(TablePassage.DEFAULT_PASSAGE_COUNT) { passageIdFactory() }
         launchCommand {
-            repository.addTable(tableId, passageIds)
+            repository.addTable(tableId, passageIds, position)
         }
     }
 

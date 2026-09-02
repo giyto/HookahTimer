@@ -49,9 +49,16 @@ class HallScreenTest {
 
         composeRule.onNodeWithText("Столов пока нет").assertIsDisplayed()
         composeRule.onNodeWithText("Зал").assertDoesNotExist()
+        composeRule.onNodeWithTag(HallTestTags.ACTION_MENU).assertIsDisplayed()
+        composeRule.onNodeWithTag(HallTestTags.TOGGLE_EDIT_MODE).assertDoesNotExist()
+        composeRule.onNodeWithTag(HallTestTags.ADD_TABLE).assertDoesNotExist()
+        openActionMenu()
         composeRule.onNodeWithTag(HallTestTags.TOGGLE_EDIT_MODE).assertIsDisplayed()
         composeRule.onNodeWithTag(HallTestTags.ADD_TABLE).assertDoesNotExist()
+        composeRule.onNodeWithTag(HallTestTags.TOGGLE_FULLSCREEN).assertIsDisplayed()
+        composeRule.onNodeWithTag(HallTestTags.TOGGLE_VIEWPORT_LOCK).assertIsDisplayed()
         composeRule.onNodeWithTag(HallTestTags.CANVAS_GRID).assertExists()
+        composeRule.onNodeWithTag(HallTestTags.VENUE_LOGO).assertIsDisplayed()
     }
 
     @Test
@@ -59,6 +66,7 @@ class HallScreenTest {
         setStaticContent(HallUiState(isEditMode = true))
 
         composeRule.onNodeWithTag(HallTestTags.EDIT_MODE_INDICATOR).assertIsDisplayed()
+        openActionMenu()
         composeRule.onNodeWithTag(HallTestTags.ADD_TABLE)
             .assertContentDescriptionEquals("Добавить стол")
             .assertIsDisplayed()
@@ -71,6 +79,7 @@ class HallScreenTest {
     fun workModeShowsOnlyFullscreenAndEditFloatingActions() {
         setStaticContent(HallUiState())
 
+        openActionMenu()
         composeRule.onNodeWithTag(HallTestTags.TOGGLE_FULLSCREEN).assertIsDisplayed()
         composeRule.onNodeWithTag(HallTestTags.TOGGLE_EDIT_MODE)
             .assertContentDescriptionEquals("Редактировать")
@@ -86,12 +95,102 @@ class HallScreenTest {
             onAction = { action = it },
         )
 
+        openActionMenu()
         composeRule.onNodeWithTag(HallTestTags.TOGGLE_FULLSCREEN)
             .assertContentDescriptionEquals("Выйти из полного экрана")
             .assertHasClickAction()
             .performClick()
 
         assertEquals(HallAction.ToggleFullscreen, action)
+    }
+
+    @Test
+    fun actionMenuClosesAfterActionAndOutsideTap() {
+        setStaticContent(HallUiState())
+
+        openActionMenu()
+        composeRule.onNodeWithTag(HallTestTags.TOGGLE_FULLSCREEN).performClick()
+        composeRule.onNodeWithTag(HallTestTags.TOGGLE_FULLSCREEN).assertDoesNotExist()
+
+        openActionMenu()
+        composeRule.onNodeWithTag(HallTestTags.ACTION_MENU_DISMISS_AREA).performTouchInput {
+            click(center)
+        }
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag(HallTestTags.TOGGLE_EDIT_MODE).assertDoesNotExist()
+    }
+
+    @Test
+    fun viewportLockBlocksCanvasGesturesButKeepsTableTapActive() {
+        var action: HallAction? = null
+        setStaticContent(
+            HallUiState(
+                tables = listOf(
+                    HallTable(
+                        id = "table",
+                        name = "Стол",
+                        position = CanvasPosition(300f, 300f),
+                    ),
+                ),
+            ),
+            onAction = { action = it },
+        )
+        val canvas = composeRule.onNodeWithTag(HallTestTags.CANVAS_GRID)
+        val before = canvas.fetchSemanticsNode().config
+        val scaleBefore = before[CanvasScaleKey]
+        val offsetXBefore = before[CanvasOffsetXKey]
+        val offsetYBefore = before[CanvasOffsetYKey]
+
+        performHallAction(HallTestTags.TOGGLE_VIEWPORT_LOCK)
+        composeRule.onNodeWithTag(HallTestTags.VIEWPORT_LOCKED_INDICATOR).assertIsDisplayed()
+        assertTrue(canvas.fetchSemanticsNode().config[CanvasLockedKey])
+
+        canvas.performTouchInput {
+            down(0, center + Offset(-80f, 0f))
+            down(1, center + Offset(80f, 0f))
+            moveTo(0, center + Offset(-180f, 0f))
+            moveTo(1, center + Offset(180f, 0f))
+            up(0)
+            up(1)
+        }
+        composeRule.waitForIdle()
+
+        val after = canvas.fetchSemanticsNode().config
+        assertEquals(scaleBefore, after[CanvasScaleKey])
+        assertEquals(offsetXBefore, after[CanvasOffsetXKey])
+        assertEquals(offsetYBefore, after[CanvasOffsetYKey])
+
+        composeRule.onNodeWithTag(HallTestTags.table("table")).performClick()
+        assertEquals(HallAction.AdvanceTimer("table"), action)
+    }
+
+    @Test
+    fun addActionUsesCurrentVisibleViewportAfterPan() {
+        var action: HallAction? = null
+        setStaticContent(
+            HallUiState(
+                tables = listOf(
+                    HallTable("left", "Левый", position = CanvasPosition(0f, 0f)),
+                    HallTable("right", "Правый", position = CanvasPosition(2_500f, 0f)),
+                ),
+                isEditMode = true,
+            ),
+            onAction = { action = it },
+        )
+
+        composeRule.onNodeWithTag(HallTestTags.CANVAS_GRID).performTouchInput {
+            swipe(center, center + Offset(-500f, 0f), durationMillis = 500)
+        }
+        composeRule.waitForIdle()
+        val offsetX = composeRule.onNodeWithTag(HallTestTags.CANVAS_GRID)
+            .fetchSemanticsNode().config[CanvasOffsetXKey]
+        assertTrue(offsetX > 0f)
+
+        performHallAction(HallTestTags.ADD_TABLE)
+
+        val addAction = action as HallAction.AddTable
+        assertTrue(addAction.position.x > offsetX)
+        assertTrue(addAction.position.x > CanvasPosition.Default.x)
     }
 
     @Test
@@ -140,8 +239,8 @@ class HallScreenTest {
     fun addActionCreatesVisibleTableInsideField() {
         val viewModel = setViewModelContent()
 
-        composeRule.onNodeWithTag(HallTestTags.TOGGLE_EDIT_MODE).performClick()
-        composeRule.onNodeWithTag(HallTestTags.ADD_TABLE).performClick()
+        performHallAction(HallTestTags.TOGGLE_EDIT_MODE)
+        performHallAction(HallTestTags.ADD_TABLE)
 
         composeRule.onNodeWithTag(HallTestTags.table("id-1")).assertIsDisplayed()
         composeRule.onNodeWithText("Стол 1").assertIsDisplayed()
@@ -182,8 +281,8 @@ class HallScreenTest {
     @Test
     fun deleteRequiresConfirmationAndCanBeCancelled() {
         val viewModel = setViewModelContent()
-        composeRule.onNodeWithTag(HallTestTags.TOGGLE_EDIT_MODE).performClick()
-        composeRule.onNodeWithTag(HallTestTags.ADD_TABLE).performClick()
+        performHallAction(HallTestTags.TOGGLE_EDIT_MODE)
+        performHallAction(HallTestTags.ADD_TABLE)
 
         composeRule.onNodeWithTag(HallTestTags.deleteTable("id-1")).performClick()
         composeRule.onNodeWithText("Удалить стол?").assertIsDisplayed()
@@ -232,9 +331,9 @@ class HallScreenTest {
     @Test
     fun workingModeHidesDeleteAndIgnoresDrag() {
         val viewModel = setViewModelContent()
-        composeRule.onNodeWithTag(HallTestTags.TOGGLE_EDIT_MODE).performClick()
-        composeRule.onNodeWithTag(HallTestTags.ADD_TABLE).performClick()
-        composeRule.onNodeWithTag(HallTestTags.TOGGLE_EDIT_MODE).performClick()
+        performHallAction(HallTestTags.TOGGLE_EDIT_MODE)
+        performHallAction(HallTestTags.ADD_TABLE)
+        performHallAction(HallTestTags.TOGGLE_EDIT_MODE)
         val positionBeforeGesture = viewModel.state.value.tables.single().position
 
         composeRule.onNodeWithTag(HallTestTags.deleteTable("id-1")).assertDoesNotExist()
@@ -253,8 +352,8 @@ class HallScreenTest {
     @Test
     fun dragInEditModeMovesTableInLogicalSpace() {
         val viewModel = setViewModelContent()
-        composeRule.onNodeWithTag(HallTestTags.TOGGLE_EDIT_MODE).performClick()
-        composeRule.onNodeWithTag(HallTestTags.ADD_TABLE).performClick()
+        performHallAction(HallTestTags.TOGGLE_EDIT_MODE)
+        performHallAction(HallTestTags.ADD_TABLE)
 
         composeRule.onNodeWithTag(HallTestTags.table("id-1")).performTouchInput {
             swipe(
@@ -296,8 +395,8 @@ class HallScreenTest {
     @Test
     fun tapInEditModeDoesNotMoveTable() {
         val viewModel = setViewModelContent()
-        composeRule.onNodeWithTag(HallTestTags.TOGGLE_EDIT_MODE).performClick()
-        composeRule.onNodeWithTag(HallTestTags.ADD_TABLE).performClick()
+        performHallAction(HallTestTags.TOGGLE_EDIT_MODE)
+        performHallAction(HallTestTags.ADD_TABLE)
         val positionBeforeTap = viewModel.state.value.tables.single().position
 
         composeRule.onNodeWithTag(HallTestTags.table("id-1")).performTouchInput {
@@ -494,9 +593,9 @@ class HallScreenTest {
     @Test
     fun twoPassageCycleAdvancesAndResetsWithOneTapPerStage() {
         val viewModel = setViewModelContent()
-        composeRule.onNodeWithTag(HallTestTags.TOGGLE_EDIT_MODE).performClick()
-        composeRule.onNodeWithTag(HallTestTags.ADD_TABLE).performClick()
-        composeRule.onNodeWithTag(HallTestTags.TOGGLE_EDIT_MODE).performClick()
+        performHallAction(HallTestTags.TOGGLE_EDIT_MODE)
+        performHallAction(HallTestTags.ADD_TABLE)
+        performHallAction(HallTestTags.TOGGLE_EDIT_MODE)
         val tableNode = composeRule.onNodeWithTag(HallTestTags.table("id-1"))
 
         tableNode.performClick()
@@ -536,7 +635,7 @@ class HallScreenTest {
         tableNode.performClick()
         composeRule.onNodeWithText("Сбросить стол?").assertDoesNotExist()
         assertEquals(TableTimerState.Idle, viewModel.state.value.tables.single().timerState)
-        composeRule.onNodeWithTag(HallTestTags.TOGGLE_EDIT_MODE).performClick()
+        performHallAction(HallTestTags.TOGGLE_EDIT_MODE)
         tableNode.assertHasClickAction()
     }
 
@@ -558,8 +657,11 @@ class HallScreenTest {
             }
         }
 
+        composeRule.onNodeWithTag(HallTestTags.ACTION_MENU).assertIsDisplayed()
+        openActionMenu()
         composeRule.onNodeWithTag(HallTestTags.TOGGLE_FULLSCREEN).assertIsDisplayed()
         composeRule.onNodeWithTag(HallTestTags.TOGGLE_EDIT_MODE).assertIsDisplayed()
+        composeRule.onNodeWithTag(HallTestTags.TOGGLE_VIEWPORT_LOCK).assertIsDisplayed()
     }
 
     @Test
@@ -667,6 +769,17 @@ class HallScreenTest {
                 )
             }
         }
+    }
+
+    private fun openActionMenu() {
+        composeRule.onNodeWithTag(HallTestTags.ACTION_MENU).performClick()
+        composeRule.waitForIdle()
+    }
+
+    private fun performHallAction(testTag: String) {
+        openActionMenu()
+        composeRule.onNodeWithTag(testTag).performClick()
+        composeRule.waitForIdle()
     }
 
     private fun setViewModelContent(): HallViewModel {

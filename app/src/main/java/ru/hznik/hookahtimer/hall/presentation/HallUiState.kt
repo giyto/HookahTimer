@@ -15,7 +15,9 @@ data class HallUiState(
 sealed interface HallAction {
     data object ToggleEditMode : HallAction
     data object ToggleFullscreen : HallAction
-    data object AddTable : HallAction
+    data class AddTable(
+        val position: CanvasPosition = CanvasPosition.Default,
+    ) : HallAction
     data class MoveTable(
         val tableId: String,
         val position: CanvasPosition,

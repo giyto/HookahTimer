@@ -12,6 +12,7 @@ interface HallRepository {
     suspend fun addTable(
         tableId: String,
         passageIds: List<String>,
+        position: CanvasPosition? = null,
     )
 
     suspend fun moveTable(

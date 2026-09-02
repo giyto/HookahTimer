@@ -21,7 +21,11 @@ class InMemoryHallRepository(
 
     override val tables = mutableTables.asStateFlow()
 
-    override suspend fun addTable(tableId: String, passageIds: List<String>) {
+    override suspend fun addTable(
+        tableId: String,
+        passageIds: List<String>,
+        position: CanvasPosition?,
+    ) {
         require(passageIds.size == TablePassage.DEFAULT_PASSAGE_COUNT)
         mutex.withLock {
             if (mutableTables.value.any { it.id == tableId }) return
@@ -29,7 +33,7 @@ class InMemoryHallRepository(
             mutableTables.value = mutableTables.value + HallTable(
                 id = tableId,
                 name = "Стол $number",
-                position = initialTablePosition(number),
+                position = position ?: initialTablePosition(number),
                 passages = TablePassage.defaultList(passageIds.iterator()::next),
             )
         }

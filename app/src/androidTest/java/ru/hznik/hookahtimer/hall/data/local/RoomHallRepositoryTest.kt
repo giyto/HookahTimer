@@ -10,6 +10,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
+import ru.hznik.hookahtimer.hall.model.CanvasPosition
 import ru.hznik.hookahtimer.hall.model.TableTimerState
 
 class RoomHallRepositoryTest {
@@ -41,6 +42,15 @@ class RoomHallRepositoryTest {
 
         assertEquals("Стол 2", table.name)
         assertEquals(listOf("second-1", "second-2"), table.passages.map { it.id })
+    }
+
+    @Test
+    fun viewportPositionIsPersistedWhenTableIsAdded() = runTest {
+        val position = CanvasPosition(840f, 460f)
+
+        repository.addTable("centered", listOf("centered-1", "centered-2"), position)
+
+        assertEquals(position, repository.tables.first { it.isNotEmpty() }.single().position)
     }
 
     @Test
