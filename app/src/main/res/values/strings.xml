@@ -23,6 +23,7 @@
     <string name="pill_table_description">Стол-пилюля %1$s</string>
     <string name="table_passage_indicator">%1$d/%2$d</string>
     <string name="running_table_description">%1$s, проходка %2$d из %3$d, осталось %4$s</string>
+    <string name="ending_soon_table_description">%1$s, проходка %2$d из %3$d, скоро закончится, осталось %4$s</string>
     <string name="overdue_table_description">%1$s, проходка %2$d из %3$d, просрочка %4$s</string>
     <string name="completed_table_description">%1$s, обслуживание завершено</string>
     <string name="table_settings_title">Настройки: %1$s</string>

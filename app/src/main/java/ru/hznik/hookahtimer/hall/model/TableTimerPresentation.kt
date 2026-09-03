@@ -3,6 +3,7 @@ package ru.hznik.hookahtimer.hall.model
 data class TableTimerPresentation(
     val timerText: String? = null,
     val passageNumber: Int? = null,
+    val isEndingSoon: Boolean = false,
     val isOverdue: Boolean = false,
     val isCompleted: Boolean = false,
 )
@@ -18,9 +19,11 @@ fun HallTable.timerPresentation(nowEpochMillis: Long): TableTimerPresentation =
             val remainingMillis = (state.endsAtEpochMillis - nowEpochMillis)
                 .coerceAtMost(configuredDurationMillis)
             if (remainingMillis > 0L) {
+                val remainingSeconds = remainingMillis.ceilToSeconds()
                 TableTimerPresentation(
-                    timerText = formatTimerSeconds(remainingMillis.ceilToSeconds()),
+                    timerText = formatTimerSeconds(remainingSeconds),
                     passageNumber = passageIndex + 1,
+                    isEndingSoon = remainingSeconds <= ENDING_SOON_THRESHOLD_SECONDS,
                 )
             } else {
                 val overdueSeconds = ((nowEpochMillis - state.endsAtEpochMillis).coerceAtLeast(0L)) /
@@ -51,3 +54,4 @@ private fun Long.ceilToSeconds(): Long =
 private const val MILLIS_PER_SECOND = 1_000L
 private const val MILLIS_PER_MINUTE = 60_000L
 private const val SECONDS_PER_MINUTE = 60L
+private const val ENDING_SOON_THRESHOLD_SECONDS = 60L

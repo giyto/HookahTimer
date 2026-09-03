@@ -35,11 +35,31 @@ class TableTimerPresentationTest {
         val atEnd = table.timerPresentation(nowEpochMillis = 1_800_000L)
         assertEquals("00:00", atEnd.timerText)
         assertTrue(atEnd.isOverdue)
+        assertFalse(atEnd.isEndingSoon)
 
         val oneSecondLate = table.timerPresentation(nowEpochMillis = 1_801_000L)
         assertEquals("-00:01", oneSecondLate.timerText)
         assertTrue(oneSecondLate.isOverdue)
+        assertFalse(oneSecondLate.isEndingSoon)
         assertEquals(1, oneSecondLate.passageNumber)
+    }
+
+    @Test
+    fun endingSoonCoversOnlyLastPositiveMinute() {
+        val table = runningTable(endsAt = 120_000L)
+
+        val sixtyOneSeconds = table.timerPresentation(nowEpochMillis = 59_000L)
+        val sixtySeconds = table.timerPresentation(nowEpochMillis = 60_000L)
+        val oneSecond = table.timerPresentation(nowEpochMillis = 119_001L)
+
+        assertEquals("01:01", sixtyOneSeconds.timerText)
+        assertFalse(sixtyOneSeconds.isEndingSoon)
+        assertEquals("01:00", sixtySeconds.timerText)
+        assertTrue(sixtySeconds.isEndingSoon)
+        assertEquals("00:01", oneSecond.timerText)
+        assertTrue(oneSecond.isEndingSoon)
+        assertFalse(sixtySeconds.isOverdue)
+        assertFalse(oneSecond.isOverdue)
     }
 
     @Test
@@ -48,8 +68,31 @@ class TableTimerPresentationTest {
         val completed = idle.copy(timerState = TableTimerState.Completed)
 
         assertEquals(null, idle.timerPresentation(0L).timerText)
+        assertFalse(idle.timerPresentation(0L).isEndingSoon)
         assertTrue(completed.timerPresentation(0L).isCompleted)
         assertEquals(null, completed.timerPresentation(0L).timerText)
+        assertFalse(completed.timerPresentation(0L).isEndingSoon)
+    }
+
+    @Test
+    fun nextPassageStartsOutsideWarningWhenItsDurationExceedsOneMinute() {
+        val passages = listOf(
+            TablePassage("first", 1),
+            TablePassage("second", 2),
+        )
+        val endingSoonTable = HallTable(
+            id = "table",
+            name = "Стол",
+            passages = passages,
+            timerState = TableTimerState.Running("first", 60_000L),
+        )
+        assertTrue(endingSoonTable.timerPresentation(0L).isEndingSoon)
+
+        val nextState = advanceTableTimer(endingSoonTable, nowEpochMillis = 30_000L)
+        val nextTable = endingSoonTable.copy(timerState = nextState)
+
+        assertEquals("02:00", nextTable.timerPresentation(30_000L).timerText)
+        assertFalse(nextTable.timerPresentation(30_000L).isEndingSoon)
     }
 
     @Test

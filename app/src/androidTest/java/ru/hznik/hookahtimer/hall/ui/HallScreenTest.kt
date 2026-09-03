@@ -450,6 +450,87 @@ class HallScreenTest {
     }
 
     @Test
+    fun timerVisualStatesCoverCircleAndPillWithoutChangingTapActions() {
+        val passages = listOf(TablePassage("passage", 30))
+        val tables = listOf(
+            HallTable(
+                id = "normal-circle",
+                name = "Обычный круг",
+                position = CanvasPosition(40f, 60f),
+                passages = passages,
+                timerState = TableTimerState.Running("passage", 121_000L),
+            ),
+            HallTable(
+                id = "warning-circle",
+                name = "Скоро круг",
+                position = CanvasPosition(260f, 60f),
+                passages = passages,
+                timerState = TableTimerState.Running("passage", 120_000L),
+            ),
+            HallTable(
+                id = "overdue-circle",
+                name = "Просрочен круг",
+                position = CanvasPosition(500f, 60f),
+                passages = passages,
+                timerState = TableTimerState.Running("passage", 59_000L),
+            ),
+            HallTable(
+                id = "normal-pill",
+                name = "Обычная пилюля",
+                shape = TableShape.PILL,
+                position = CanvasPosition(40f, 300f),
+                passages = passages,
+                timerState = TableTimerState.Running("passage", 121_000L),
+            ),
+            HallTable(
+                id = "warning-pill",
+                name = "Скоро пилюля",
+                shape = TableShape.PILL,
+                position = CanvasPosition(300f, 300f),
+                passages = passages,
+                timerState = TableTimerState.Running("passage", 120_000L),
+            ),
+            HallTable(
+                id = "overdue-pill",
+                name = "Просрочена пилюля",
+                shape = TableShape.PILL,
+                position = CanvasPosition(620f, 300f),
+                passages = passages,
+                timerState = TableTimerState.Running("passage", 59_000L),
+            ),
+        )
+        val actions = mutableListOf<HallAction>()
+        setStaticContent(
+            state = HallUiState(tables = tables),
+            onAction = actions::add,
+            timeProvider = TimeProvider { 60_000L },
+        )
+
+        mapOf(
+            "normal-circle" to TableTimerVisualState.NORMAL,
+            "warning-circle" to TableTimerVisualState.ENDING_SOON,
+            "overdue-circle" to TableTimerVisualState.OVERDUE,
+            "normal-pill" to TableTimerVisualState.NORMAL,
+            "warning-pill" to TableTimerVisualState.ENDING_SOON,
+            "overdue-pill" to TableTimerVisualState.OVERDUE,
+        ).forEach { (tableId, expectedState) ->
+            val tableNode = composeRule.onNodeWithTag(HallTestTags.table(tableId))
+            assertEquals(
+                expectedState,
+                tableNode.fetchSemanticsNode().config[TableTimerVisualStateKey],
+            )
+            tableNode.assertHasClickAction()
+        }
+
+        composeRule.onNodeWithTag(HallTestTags.table("warning-circle"))
+            .assertContentDescriptionEquals(
+                "Круглый стол Скоро круг, проходка 1 из 1, скоро закончится, осталось 01:00",
+            )
+            .performClick()
+        assertEquals(HallAction.AdvanceTimer("warning-circle"), actions.single())
+    }
+
+    @Test
     fun timerOverdueAndCompletedStatesHaveExpectedContent() {
         val passages = listOf(
             TablePassage("p1", 1),
@@ -528,7 +609,7 @@ class HallScreenTest {
             .assertTextEquals("×")
         composeRule.onNodeWithTag(HallTestTags.table("running"))
             .assertContentDescriptionEquals(
-                "Стол-пилюля Работает, проходка 1 из 2, осталось 00:30",
+                "Стол-пилюля Работает, проходка 1 из 2, скоро закончится, осталось 00:30",
             )
         composeRule.onNodeWithTag(HallTestTags.table("overdue"))
             .assertContentDescriptionEquals(

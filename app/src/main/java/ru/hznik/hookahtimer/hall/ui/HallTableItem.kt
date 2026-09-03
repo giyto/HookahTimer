@@ -31,6 +31,8 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.SemanticsPropertyKey
+import androidx.compose.ui.semantics.SemanticsPropertyReceiver
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -96,6 +98,13 @@ internal fun HallTableItem(
             table.passages.size,
             checkNotNull(timer.timerText),
         )
+        timer.isEndingSoon -> stringResource(
+            R.string.ending_soon_table_description,
+            shapeDescription,
+            checkNotNull(timer.passageNumber),
+            table.passages.size,
+            checkNotNull(timer.timerText),
+        )
         timer.timerText != null -> stringResource(
             R.string.running_table_description,
             shapeDescription,
@@ -147,6 +156,11 @@ internal fun HallTableItem(
     } else {
         MaterialTheme.colorScheme.onSecondaryContainer
     }
+    val timerVisualState = when {
+        timer.isOverdue -> TableTimerVisualState.OVERDUE
+        timer.isEndingSoon -> TableTimerVisualState.ENDING_SOON
+        else -> TableTimerVisualState.NORMAL
+    }
 
     Box(
         modifier = modifier
@@ -173,7 +187,9 @@ internal fun HallTableItem(
                 .offset(y = overflow)
                 .size(width = dimensions.width, height = dimensions.height)
                 .then(
-                    if (isEditMode) {
+                    if (timer.isEndingSoon) {
+                        Modifier.border(3.dp, Color.Red, shape)
+                    } else if (isEditMode) {
                         Modifier.border(3.dp, MaterialTheme.colorScheme.primary, shape)
                     } else {
                         Modifier
@@ -182,7 +198,10 @@ internal fun HallTableItem(
                 .then(clickModifier)
                 .then(dragModifier)
                 .testTag(HallTestTags.table(table.id))
-                .semantics { contentDescription = tableDescription },
+                .semantics {
+                    contentDescription = tableDescription
+                    tableTimerVisualState = timerVisualState
+                },
             shape = shape,
             color = containerColor,
             contentColor = contentColor,
@@ -197,6 +216,7 @@ internal fun HallTableItem(
                         timerText = timer.timerText,
                         passageNumber = checkNotNull(timer.passageNumber),
                         passageCount = table.passages.size,
+                        isEndingSoon = timer.isEndingSoon,
                     )
                     else -> IdleTableContent(table)
                 }
@@ -240,6 +260,7 @@ private fun BoxScope.RunningTableContent(
     timerText: String,
     passageNumber: Int,
     passageCount: Int,
+    isEndingSoon: Boolean,
 ) {
     Text(
         text = stringResource(R.string.table_passage_indicator, passageNumber, passageCount),
@@ -259,6 +280,7 @@ private fun BoxScope.RunningTableContent(
             .align(Alignment.Center)
             .padding(horizontal = 8.dp)
             .testTag(HallTestTags.tableTimer(table.id)),
+        color = if (isEndingSoon) Color.Red else Color.Unspecified,
         textAlign = TextAlign.Center,
         fontWeight = FontWeight.Bold,
         fontSize = 24.sp,
@@ -312,3 +334,13 @@ internal fun tableCanvasDimensions(shape: TableShape): TableCanvasDimensions = w
 }
 
 internal val DELETE_HANDLE_OVERFLOW = 20.dp
+
+internal enum class TableTimerVisualState {
+    NORMAL,
+    ENDING_SOON,
+    OVERDUE,
+}
+
+internal val TableTimerVisualStateKey =
+    SemanticsPropertyKey<TableTimerVisualState>("TableTimerVisualState")
+internal var SemanticsPropertyReceiver.tableTimerVisualState by TableTimerVisualStateKey

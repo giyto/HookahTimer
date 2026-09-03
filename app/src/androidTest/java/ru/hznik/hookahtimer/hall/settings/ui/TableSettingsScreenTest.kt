@@ -267,14 +267,18 @@ class TableSettingsScreenTest {
     }
 
     private fun editDuration(passageId: String, value: String) {
+        waitForDurationEditorToClose()
         composeRule.onNodeWithTag(TableSettingsTestTags.passageDuration(passageId))
             .performScrollTo()
             .performClick()
         val editorField = composeRule.onNodeWithTag(TableSettingsTestTags.EDITOR_FIELD)
-        editorField.assertIsDisplayed()
+        composeRule.waitUntil(timeoutMillis = 5_000L) {
+            runCatching { editorField.assertIsDisplayed() }.isSuccess
+        }
         waitForEditorFocus()
         editorField.performTextReplacement(value)
         composeRule.onNodeWithTag(TableSettingsTestTags.EDITOR_DONE).performClick()
+        waitForDurationEditorToClose()
     }
 
     private fun waitForEditorFocus() {
@@ -285,6 +289,13 @@ class TableSettingsScreenTest {
         val field = composeRule.onNodeWithTag(testTag)
         composeRule.waitUntil(timeoutMillis = 5_000L) {
             runCatching { field.assertIsFocused() }.isSuccess
+        }
+    }
+
+    private fun waitForDurationEditorToClose() {
+        val editorDialog = composeRule.onNodeWithTag(TableSettingsTestTags.EDITOR_DIALOG)
+        composeRule.waitUntil(timeoutMillis = 5_000L) {
+            runCatching { editorDialog.assertDoesNotExist() }.isSuccess
         }
     }
 

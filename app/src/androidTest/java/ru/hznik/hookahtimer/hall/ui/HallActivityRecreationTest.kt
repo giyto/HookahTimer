@@ -250,13 +250,24 @@ class HallActivityRecreationTest {
     }
 
     private fun editDuration(passageId: String, value: String) {
+        waitForDurationEditorToClose()
         composeRule.onNodeWithTag(TableSettingsTestTags.passageDuration(passageId))
             .performScrollTo()
             .performClick()
-        composeRule.onNodeWithTag(TableSettingsTestTags.EDITOR_FIELD)
-            .assertIsDisplayed()
-            .performTextReplacement(value)
+        val editorField = composeRule.onNodeWithTag(TableSettingsTestTags.EDITOR_FIELD)
+        composeRule.waitUntil(timeoutMillis = 5_000L) {
+            runCatching { editorField.assertIsDisplayed() }.isSuccess
+        }
+        editorField.performTextReplacement(value)
         composeRule.onNodeWithTag(TableSettingsTestTags.EDITOR_DONE).performClick()
+        waitForDurationEditorToClose()
+    }
+
+    private fun waitForDurationEditorToClose() {
+        val editorDialog = composeRule.onNodeWithTag(TableSettingsTestTags.EDITOR_DIALOG)
+        composeRule.waitUntil(timeoutMillis = 5_000L) {
+            runCatching { editorDialog.assertDoesNotExist() }.isSuccess
+        }
     }
 
     private fun waitForUniqueTableNodes(tableIds: List<String>) {
