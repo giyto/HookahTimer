@@ -1,6 +1,9 @@
 package ru.hznik.hookahtimer.hall.ui
 
+import android.os.SystemClock
 import android.view.WindowManager
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.test.ComposeTimeoutException
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.assertTextContains
@@ -13,6 +16,9 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextReplacement
+import androidx.core.graphics.Insets
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 import androidx.lifecycle.Lifecycle
 import androidx.test.platform.app.InstrumentationRegistry
 import kotlinx.coroutines.flow.first
@@ -27,6 +33,43 @@ import ru.hznik.hookahtimer.MainActivity
 import ru.hznik.hookahtimer.hall.settings.ui.TableSettingsTestTags
 
 class HallActivityRecreationTest {
+    @Test
+    fun openHookahWindowSurvivesRecreationAndBackgroundWithoutLosingViewportLock() {
+        val application = composeRule.activity.application as HookahTimerApplication
+        runBlocking {
+            application.hallRepository.addTable("multi", listOf("p1", "p2"))
+            application.hallRepository.advanceTimer("multi", System.currentTimeMillis())
+            application.hallRepository.addHookah("multi", "h2", System.currentTimeMillis())
+        }
+        composeRule.waitUntil(5_000L) {
+            composeRule.onAllNodesWithTag(HallTestTags.table("multi")).fetchSemanticsNodes().isNotEmpty()
+        }
+        performHallAction(HallTestTags.TOGGLE_FULLSCREEN)
+        performHallAction(HallTestTags.TOGGLE_VIEWPORT_LOCK)
+        assertFullscreenSelected()
+        val beforeViewport = awaitStableViewport("before opening hookahs")
+        assertTrue(beforeViewport.locked)
+        assertImmersiveBarsHidden(beforeViewport, "before opening hookahs")
+        val beforeTables = runBlocking { application.hallRepository.tables.first() }
+        composeRule.onNodeWithTag(HallTestTags.table("multi")).performClick()
+        composeRule.onNodeWithTag(HookahTestTags.OVERLAY).assertIsDisplayed()
+        composeRule.activityRule.scenario.recreate()
+        composeRule.onNodeWithTag(HookahTestTags.OVERLAY).assertIsDisplayed()
+        composeRule.activityRule.scenario.moveToState(Lifecycle.State.CREATED)
+        composeRule.activityRule.scenario.moveToState(Lifecycle.State.RESUMED)
+        composeRule.onNodeWithTag(HookahTestTags.OVERLAY).assertIsDisplayed()
+        org.junit.Assert.assertEquals(beforeTables, runBlocking { application.hallRepository.tables.first() })
+        composeRule.onNodeWithTag(HookahTestTags.CLOSE).performClick()
+        assertFullscreenSelected()
+        val afterViewport = awaitStableViewport("after recreation and backgrounding")
+        assertImmersiveBarsHidden(afterViewport, "after recreation and backgrounding")
+        org.junit.Assert.assertEquals(
+            "Canvas bounds, scale, offsets, lock and immersive bars must survive recreation and backgrounding",
+            beforeViewport,
+            afterViewport,
+        )
+    }
+
     @get:Rule
     val composeRule = createAndroidComposeRule<MainActivity>()
 
@@ -209,6 +252,105 @@ class HallActivityRecreationTest {
         composeRule.activityRule.scenario.recreate()
 
         waitForUniqueTableNodes(tableIds)
+    }
+
+    private data class ViewportSnapshot(
+        val bounds: Rect,
+        val scale: Float,
+        val offsetX: Float,
+        val offsetY: Float,
+        val locked: Boolean,
+        val immersiveBars: ImmersiveBarsSnapshot,
+    )
+
+    private data class ImmersiveBarsSnapshot(
+        val statusVisible: Boolean,
+        val navigationVisible: Boolean,
+        val insets: Insets,
+    )
+
+    private fun assertImmersiveBarsHidden(snapshot: ViewportSnapshot, phase: String) {
+        assertFalse("Status bar must be hidden ($phase): $snapshot", snapshot.immersiveBars.statusVisible)
+        assertFalse("Navigation bar must be hidden ($phase): $snapshot", snapshot.immersiveBars.navigationVisible)
+    }
+
+    private fun assertFullscreenSelected() {
+        openActionMenu()
+        composeRule.onNodeWithTag(HallTestTags.TOGGLE_FULLSCREEN)
+            .assertContentDescriptionEquals("Выйти из полного экрана")
+        composeRule.onNodeWithTag(HallTestTags.ACTION_MENU).performClick()
+        composeRule.waitForIdle()
+    }
+
+    private fun awaitStableViewport(phase: String): ViewportSnapshot {
+        var lastSnapshot: ViewportSnapshot? = null
+        var stableSince = SystemClock.uptimeMillis()
+        var diagnostics = "No samples collected"
+        var samples = 0
+        // Compose idleness alone does not wait for Android's system-bar inset animation.
+        // Fullscreen selection and status/navigation visibility are asserted separately.
+        // Caption visibility is independent of immersive mode; it is diagnostic only.
+        // Its actual effect on canvas bounds still participates in exact comparison.
+        try {
+            composeRule.waitUntil(timeoutMillis = 15_000L) {
+                val (hasWindowFocus, immersiveBars, windowDiagnostics) = composeRule.runOnIdle {
+                    val decorView = composeRule.activity.window.decorView
+                    val insets = ViewCompat.getRootWindowInsets(decorView)
+                    val visibleBars = insets?.let {
+                        // Android can report old animated sizes even for hidden bars.
+                        // Only visible bars occupy space; keep raw sizes in diagnostics.
+                        val visibleTypes = intArrayOf(
+                            WindowInsetsCompat.Type.statusBars(),
+                            WindowInsetsCompat.Type.navigationBars(),
+                        ).filter { type -> it.isVisible(type) }.fold(0) { mask, type -> mask or type }
+                        ImmersiveBarsSnapshot(
+                            statusVisible = it.isVisible(WindowInsetsCompat.Type.statusBars()),
+                            navigationVisible = it.isVisible(WindowInsetsCompat.Type.navigationBars()),
+                            insets = it.getInsets(visibleTypes),
+                        )
+                    }
+                    Triple(
+                        decorView.hasWindowFocus(),
+                        visibleBars,
+                        insets?.let {
+                            "captionVisible=${it.isVisible(WindowInsetsCompat.Type.captionBar())}, " +
+                                "captionInsets=${it.getInsets(WindowInsetsCompat.Type.captionBar())}, " +
+                                "rawBarInsets=${it.getInsets(WindowInsetsCompat.Type.systemBars())}"
+                        },
+                    )
+                }
+                val nodes = composeRule.onAllNodesWithTag(HallTestTags.CANVAS_GRID)
+                    .fetchSemanticsNodes()
+                val node = nodes.singleOrNull()
+                val snapshot = if (immersiveBars != null && node != null &&
+                    node.boundsInRoot.width > 0f && node.boundsInRoot.height > 0f
+                ) {
+                    ViewportSnapshot(
+                        bounds = node.boundsInRoot,
+                        scale = node.config[CanvasScaleKey],
+                        offsetX = node.config[CanvasOffsetXKey],
+                        offsetY = node.config[CanvasOffsetYKey],
+                        locked = node.config[CanvasLockedKey],
+                        immersiveBars = immersiveBars,
+                    )
+                } else {
+                    null
+                }
+                val now = SystemClock.uptimeMillis()
+                if (snapshot == null || snapshot != lastSnapshot) {
+                    lastSnapshot = snapshot
+                    stableSince = now
+                }
+                samples += 1
+                diagnostics = "samples=$samples, focus=$hasWindowFocus, nodes=${nodes.size}, " +
+                    "bounds=${node?.boundsInRoot}, bars=$immersiveBars, $windowDiagnostics, " +
+                    "stableFor=${now - stableSince}ms, viewport=$snapshot"
+                snapshot != null && now - stableSince >= 500L
+            }
+        } catch (timeout: ComposeTimeoutException) {
+            throw AssertionError("Viewport did not settle ($phase): $diagnostics", timeout)
+        }
+        return checkNotNull(lastSnapshot)
     }
 
     private fun waitForText(text: String) {

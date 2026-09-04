@@ -9,7 +9,10 @@ import ru.hznik.hookahtimer.hall.model.CanvasPosition
 import ru.hznik.hookahtimer.hall.model.TablePassage
 import ru.hznik.hookahtimer.hall.model.TableShape
 import ru.hznik.hookahtimer.hall.model.TableTimerState
-import ru.hznik.hookahtimer.hall.model.advanceTableTimer
+import ru.hznik.hookahtimer.hall.model.withAddedHookah
+import ru.hznik.hookahtimer.hall.model.withAdvancedHookah
+import ru.hznik.hookahtimer.hall.model.withResetHookahs
+import java.util.UUID
 
 class InMemoryHallRepository(
     initialTables: List<HallTable> = emptyList(),
@@ -63,7 +66,7 @@ class InMemoryHallRepository(
         }
         mutex.withLock {
             mutableTables.value = mutableTables.value.map { table ->
-                if (table.id == tableId && table.timerState == TableTimerState.Idle) {
+                if (table.id == tableId && table.isIdle) {
                     table.copy(
                         name = trimmedName,
                         shape = shape,
@@ -83,14 +86,39 @@ class InMemoryHallRepository(
     }
 
     override suspend fun advanceTimer(tableId: String, nowEpochMillis: Long) {
-        mutex.withLock {
-            mutableTables.value = mutableTables.value.map { table ->
-                if (table.id == tableId) {
-                    table.copy(timerState = advanceTableTimer(table, nowEpochMillis))
-                } else {
-                    table
-                }
+        changeTable(tableId) { table ->
+            when {
+                table.hasMultipleHookahs -> table
+                table.isCompleted -> table.withResetHookahs(UUID.randomUUID().toString())
+                else -> table.withAdvancedHookah(table.hookahs.single().id, nowEpochMillis)
             }
+        }
+    }
+
+    override suspend fun addHookah(tableId: String, hookahId: String, nowEpochMillis: Long) {
+        changeTable(tableId) { it.withAddedHookah(hookahId, nowEpochMillis) }
+    }
+
+    override suspend fun advanceHookah(
+        tableId: String,
+        hookahId: String,
+        nowEpochMillis: Long,
+        expectedState: TableTimerState?,
+    ) {
+        changeTable(tableId) { table ->
+            val hookah = table.hookahs.find { it.id == hookahId }
+            if (hookah == null || (expectedState != null && hookah.timerState != expectedState)) table
+            else table.withAdvancedHookah(hookahId, nowEpochMillis)
+        }
+    }
+
+    override suspend fun resetTable(tableId: String, initialHookahId: String) {
+        changeTable(tableId) { it.withResetHookahs(initialHookahId) }
+    }
+
+    private suspend fun changeTable(tableId: String, transform: (HallTable) -> HallTable) {
+        mutex.withLock {
+            mutableTables.value = mutableTables.value.map { if (it.id == tableId) transform(it) else it }
         }
     }
 }

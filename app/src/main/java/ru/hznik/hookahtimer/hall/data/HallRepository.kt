@@ -5,6 +5,7 @@ import ru.hznik.hookahtimer.hall.model.HallTable
 import ru.hznik.hookahtimer.hall.model.CanvasPosition
 import ru.hznik.hookahtimer.hall.model.TablePassage
 import ru.hznik.hookahtimer.hall.model.TableShape
+import ru.hznik.hookahtimer.hall.model.TableTimerState
 
 interface HallRepository {
     val tables: Flow<List<HallTable>>
@@ -33,6 +34,17 @@ interface HallRepository {
         tableId: String,
         nowEpochMillis: Long,
     )
+
+    suspend fun addHookah(tableId: String, hookahId: String, nowEpochMillis: Long)
+
+    suspend fun advanceHookah(
+        tableId: String,
+        hookahId: String,
+        nowEpochMillis: Long,
+        expectedState: TableTimerState? = null,
+    )
+
+    suspend fun resetTable(tableId: String, initialHookahId: String)
 }
 
 internal fun initialTablePosition(number: Int): CanvasPosition {

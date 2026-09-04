@@ -1,5 +1,12 @@
 package ru.hznik.hookahtimer.hall.ui
 
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
@@ -48,7 +55,6 @@ import ru.hznik.hookahtimer.hall.model.CanvasTransform
 import ru.hznik.hookahtimer.hall.model.CanvasViewport
 import ru.hznik.hookahtimer.hall.model.HallTable
 import ru.hznik.hookahtimer.hall.model.TableShape
-import ru.hznik.hookahtimer.hall.model.TableTimerState
 import ru.hznik.hookahtimer.hall.model.timerPresentation
 import ru.hznik.hookahtimer.hall.model.toScreenPosition
 import ru.hznik.hookahtimer.ui.icons.AppIcons
@@ -64,7 +70,15 @@ internal fun HallTableItem(
     onAdvanceTimer: () -> Unit,
     onDelete: () -> Unit,
     modifier: Modifier = Modifier,
+    onAddHookah: () -> Unit = {},
+    restoreFocus: Boolean = false,
 ) {
+    var isPressed by remember(table.id) { mutableStateOf(false) }
+    val pressScale by animateFloatAsState(if (isPressed) 0.96f else 1f, label = "Table press")
+    val focusRequester = remember(table.id) { FocusRequester() }
+    LaunchedEffect(restoreFocus) {
+        if (restoreFocus && !isEditMode) focusRequester.requestFocus()
+    }
     val dimensions = tableCanvasDimensions(table.shape)
     val density = LocalDensity.current
     val overflow = DELETE_HANDLE_OVERFLOW
@@ -89,35 +103,65 @@ internal fun HallTableItem(
         },
         table.name,
     )
-    val tableDescription = when {
-        timer.isCompleted -> stringResource(R.string.completed_table_description, shapeDescription)
+    val timerSubject = if (table.hasMultipleHookahs && table.mostUrgentHookah != null) {
+        stringResource(R.string.hookah_number, checkNotNull(table.mostUrgentHookah).number)
+    } else {
+        shapeDescription
+    }
+    val singleDescription = when {
+        timer.isCompleted -> stringResource(R.string.completed_table_description, timerSubject)
         timer.isOverdue -> stringResource(
             R.string.overdue_table_description,
-            shapeDescription,
+            timerSubject,
             checkNotNull(timer.passageNumber),
             table.passages.size,
             checkNotNull(timer.timerText),
         )
         timer.isEndingSoon -> stringResource(
             R.string.ending_soon_table_description,
-            shapeDescription,
+            timerSubject,
             checkNotNull(timer.passageNumber),
             table.passages.size,
             checkNotNull(timer.timerText),
         )
         timer.timerText != null -> stringResource(
             R.string.running_table_description,
-            shapeDescription,
+            timerSubject,
             checkNotNull(timer.passageNumber),
             table.passages.size,
             timer.timerText,
         )
+        table.hasMultipleHookahs -> stringResource(R.string.hookah_idle)
         else -> shapeDescription
+    }
+    val tableDescription = if (table.hasMultipleHookahs) {
+        stringResource(
+            R.string.multiple_hookahs_description,
+            table.name,
+            table.hookahs.size,
+            singleDescription,
+        )
+    } else {
+        singleDescription
     }
     val deleteDescription = stringResource(R.string.delete_table, table.name)
     val clickModifier = when {
-        !isEditMode -> Modifier.clickable(role = Role.Button, onClick = onAdvanceTimer)
-        table.timerState == TableTimerState.Idle -> Modifier.clickable(
+        !isEditMode -> Modifier.focusRequester(focusRequester).hookahTableGestures(
+            tableId = table.id,
+            tapLabel = stringResource(
+                when {
+                    table.isCompleted -> R.string.reset_table
+                    table.hasMultipleHookahs -> R.string.open_hookahs
+                    table.isIdle -> R.string.start_hookah
+                    else -> R.string.advance_hookah
+                },
+            ),
+            addLabel = stringResource(R.string.add_hookah),
+            onTap = onAdvanceTimer,
+            onHold = onAddHookah,
+            onPressed = { isPressed = it },
+        )
+        table.isIdle -> Modifier.clickable(
             role = Role.Button,
             onClick = onOpenSettings,
         )
@@ -186,6 +230,7 @@ internal fun HallTableItem(
             modifier = Modifier
                 .offset(y = overflow)
                 .size(width = dimensions.width, height = dimensions.height)
+                .graphicsLayer(scaleX = pressScale, scaleY = pressScale)
                 .then(
                     if (timer.isEndingSoon) {
                         Modifier.border(3.dp, Color.Red, shape)
@@ -210,6 +255,7 @@ internal fun HallTableItem(
         ) {
             Box(modifier = Modifier.size(dimensions.width, dimensions.height)) {
                 when {
+                    table.hasMultipleHookahs -> MultipleHookahsTableContent(table, nowEpochMillis)
                     timer.isCompleted -> CompletedTableContent(table)
                     timer.timerText != null -> RunningTableContent(
                         table = table,
@@ -235,6 +281,44 @@ internal fun HallTableItem(
                 Icon(imageVector = AppIcons.Close, contentDescription = null)
             }
         }
+    }
+}
+
+@Composable
+private fun BoxScope.MultipleHookahsTableContent(table: HallTable, nowEpochMillis: Long) {
+    val timer = table.timerPresentation(nowEpochMillis)
+    Text(
+        text = table.name,
+        modifier = Modifier.align(Alignment.TopCenter)
+            .padding(horizontal = 14.dp, vertical = 10.dp)
+            .testTag(HallTestTags.tableName(table.id)),
+        fontSize = 13.sp,
+        fontWeight = FontWeight.Medium,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+    )
+    Text(
+        text = if (timer.isCompleted) "×" else timer.timerText ?: "—",
+        modifier = Modifier.align(Alignment.Center).testTag(
+            if (timer.isCompleted) HallTestTags.completedMark(table.id) else HallTestTags.tableTimer(table.id),
+        ),
+        fontSize = if (timer.isCompleted) 42.sp else 24.sp,
+        fontWeight = FontWeight.Bold,
+        color = if (timer.isCompleted || timer.isEndingSoon) Color.Red else Color.Unspecified,
+        maxLines = 1,
+    )
+    Row(
+        modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        Icon(AppIcons.Hookah, contentDescription = null, modifier = Modifier.size(16.dp))
+        Text(
+            text = table.hookahs.size.toString(),
+            modifier = Modifier.testTag(HookahTestTags.tableCount(table.id)),
+            fontSize = 13.sp,
+            fontWeight = FontWeight.Medium,
+        )
     }
 }
 

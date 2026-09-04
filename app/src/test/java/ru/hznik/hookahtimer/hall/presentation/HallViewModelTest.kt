@@ -467,6 +467,14 @@ class HallViewModelTest {
             passages: List<TablePassage>,
         ) = Unit
         override suspend fun deleteTable(tableId: String) = Unit
+        override suspend fun addHookah(tableId: String, hookahId: String, nowEpochMillis: Long) = Unit
+        override suspend fun resetTable(tableId: String, initialHookahId: String) = Unit
+        override suspend fun advanceHookah(
+            tableId: String,
+            hookahId: String,
+            nowEpochMillis: Long,
+            expectedState: TableTimerState?,
+        ) = advanceTimer(tableId, nowEpochMillis)
 
         override suspend fun advanceTimer(tableId: String, nowEpochMillis: Long) {
             advanceCalls += 1

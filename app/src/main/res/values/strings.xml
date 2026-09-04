@@ -1,4 +1,16 @@
 <resources>
+    <string name="add_hookah">Добавить кальян</string>
+    <string name="start_hookah">Запустить кальян</string>
+    <string name="advance_hookah">Провести проходку</string>
+    <string name="reset_table">Сбросить стол</string>
+    <string name="open_hookahs">Открыть кальяны стола</string>
+    <string name="hookahs_title">Кальяны · %1$s</string>
+    <string name="hookah_number">Кальян №%1$d</string>
+    <string name="hookah_idle">Не запущен</string>
+    <string name="hookah_complete">Завершён</string>
+    <string name="multiple_hookahs_description">%1$s, кальянов: %2$d. %3$s</string>
+    <string name="close_hookahs">Закрыть кальяны</string>
+    <string name="hall_command_error">Не удалось сохранить изменение. Попробуйте ещё раз.</string>
     <string name="app_name">HookahTimer</string>
     <string name="hall_title">Зал</string>
     <string name="edit_hall">Редактировать</string>

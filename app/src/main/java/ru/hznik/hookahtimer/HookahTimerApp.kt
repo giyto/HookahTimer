@@ -18,7 +18,6 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import ru.hznik.hookahtimer.hall.presentation.HallAction
 import ru.hznik.hookahtimer.hall.presentation.HallViewModel
-import ru.hznik.hookahtimer.hall.model.TableTimerState
 import ru.hznik.hookahtimer.hall.model.TimeProvider
 import ru.hznik.hookahtimer.hall.settings.presentation.TableSettingsResult
 import ru.hznik.hookahtimer.hall.settings.presentation.TableSettingsViewModel
@@ -62,7 +61,7 @@ fun HookahTimerApp(
                 val table = hallState.tables.firstOrNull { it.id == tableId }
                 if (currentRoute == HALL_ROUTE &&
                     hallState.isEditMode &&
-                    table?.timerState == TableTimerState.Idle
+                    table?.isIdle == true
                 ) {
                     navController.navigate(tableSettingsRoute(tableId))
                 }
@@ -86,7 +85,7 @@ fun HookahTimerApp(
                     ?.let { encodedId -> Uri.decode(encodedId) }
                 val table = hallState.tables.firstOrNull { it.id == tableId }
 
-                if (table == null || table.timerState != TableTimerState.Idle) {
+                if (table == null || !table.isIdle) {
                     Box(modifier = Modifier.fillMaxSize())
                     LaunchedEffect(tableId) {
                         navController.returnToHall()

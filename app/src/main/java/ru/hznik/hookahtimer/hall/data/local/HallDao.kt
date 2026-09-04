@@ -18,6 +18,22 @@ interface HallDao {
     @Query("SELECT * FROM hall_tables WHERE table_id = :tableId")
     suspend fun getTable(tableId: String): TableWithPassages?
 
+    @Transaction
+    @Query("SELECT * FROM hall_tables ORDER BY sort_order")
+    suspend fun getTables(): List<TableWithPassages>
+
+    @Insert(onConflict = OnConflictStrategy.ABORT)
+    suspend fun insertHookahs(hookahs: List<TableHookahEntity>)
+
+    @Update
+    suspend fun updateHookah(hookah: TableHookahEntity)
+
+    @Query("DELETE FROM table_hookahs WHERE table_id = :tableId")
+    suspend fun deleteHookahs(tableId: String)
+
+    @Query("SELECT COUNT(*) FROM table_hookahs WHERE table_id = :tableId")
+    suspend fun countHookahs(tableId: String): Int
+
     @Query("SELECT MAX(sort_order) FROM hall_tables")
     suspend fun getMaxTableSortOrder(): Int?
 
@@ -62,15 +78,16 @@ interface HallDao {
 
     @Query(
         """
-        UPDATE hall_tables
+        UPDATE table_hookahs
         SET timer_status = :status,
             current_passage_id = :passageId,
             ends_at_epoch_millis = :endsAtEpochMillis
-        WHERE table_id = :tableId
+        WHERE table_id = :tableId AND hookah_id = :hookahId
         """,
     )
     suspend fun updateTimer(
         tableId: String,
+        hookahId: String,
         status: String,
         passageId: String?,
         endsAtEpochMillis: Long?,

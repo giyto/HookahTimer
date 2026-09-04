@@ -82,6 +82,7 @@ class RoomHallRepositoryTest {
         repository.advanceTimer("healthy", nowEpochMillis = 1_000L)
         database.hallDao().updateTimer(
             tableId = "broken",
+            hookahId = "initial:broken",
             status = TimerStatus.RUNNING.name,
             passageId = "missing",
             endsAtEpochMillis = 10_000L,
@@ -93,7 +94,7 @@ class RoomHallRepositoryTest {
         assertTrue(tables.single { it.id == "healthy" }.timerState is TableTimerState.Running)
         assertEquals(
             TimerStatus.IDLE.name,
-            database.hallDao().getTable("broken")?.table?.timerStatus,
+            database.hallDao().getTable("broken")?.hookahs?.single()?.timerStatus,
         )
     }
 }

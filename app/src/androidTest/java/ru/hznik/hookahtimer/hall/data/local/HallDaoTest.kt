@@ -14,6 +14,30 @@ import ru.hznik.hookahtimer.hall.model.HallTable
 import ru.hznik.hookahtimer.hall.model.TablePassage
 
 class HallDaoTest {
+    @Test
+    fun duplicateNumberAndOrphanHookahAreRejected() = runTest {
+        val table = HallTable("t", "VIP").toPersisted(0)
+        dao.insertTable(table.table)
+        dao.insertPassages(table.passages)
+        dao.insertHookahs(table.hookahs)
+        var duplicateRejected = false
+        try {
+            dao.insertHookahs(listOf(table.hookahs.single().copy(id = "duplicate")))
+        } catch (_: android.database.sqlite.SQLiteConstraintException) {
+            duplicateRejected = true
+        }
+        assertTrue(duplicateRejected)
+        assertEquals(1, dao.countHookahs("t"))
+        var orphanRejected = false
+        try {
+            dao.insertHookahs(listOf(table.hookahs.single().copy(id = "orphan", tableId = "missing")))
+        } catch (_: android.database.sqlite.SQLiteConstraintException) {
+            orphanRejected = true
+        }
+        assertTrue(orphanRejected)
+        assertEquals(0, dao.countHookahs("missing"))
+    }
+
     private lateinit var database: HookahTimerDatabase
     private lateinit var dao: HallDao
 
@@ -54,8 +78,10 @@ class HallDaoTest {
         ).toPersisted(sortOrder = 0)
         dao.insertTable(second.table)
         dao.insertPassages(second.passages.reversed())
+        dao.insertHookahs(second.hookahs)
         dao.insertTable(first.table)
         dao.insertPassages(first.passages)
+        dao.insertHookahs(first.hookahs)
 
         val rows = dao.observeTables().first { it.size == 2 }
 
@@ -75,10 +101,12 @@ class HallDaoTest {
         ).toPersisted(sortOrder = 0)
         dao.insertTable(persisted.table)
         dao.insertPassages(persisted.passages)
+        dao.insertHookahs(persisted.hookahs)
 
         dao.deleteTable("table")
 
         assertEquals(0, dao.countPassages("table"))
+        assertEquals(0, dao.countHookahs("table"))
         assertTrue(dao.observeTables().first().isEmpty())
     }
 }

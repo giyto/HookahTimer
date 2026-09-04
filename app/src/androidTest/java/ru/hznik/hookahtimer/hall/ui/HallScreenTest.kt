@@ -639,25 +639,31 @@ class HallScreenTest {
         setStaticContent(
             state = HallUiState(
                 tables = listOf(
-                    table.copy(
+                    HallTable(
                         id = "running",
+                        name = table.name,
                         position = CanvasPosition(80f, 100f),
+                        passages = table.passages,
                         timerState = TableTimerState.Running(
                             table.passages.first().id,
                             1_801_000L,
                         ),
                     ),
-                    table.copy(
+                    HallTable(
                         id = "overdue",
+                        name = table.name,
                         position = CanvasPosition(360f, 260f),
+                        passages = table.passages,
                         timerState = TableTimerState.Running(
                             table.passages.first().id,
                             500L,
                         ),
                     ),
-                    table.copy(
+                    HallTable(
                         id = "completed",
+                        name = table.name,
                         position = CanvasPosition(650f, 500f),
+                        passages = table.passages,
                         timerState = TableTimerState.Completed,
                     ),
                 ),

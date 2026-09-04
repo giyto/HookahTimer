@@ -14,11 +14,9 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
@@ -28,6 +26,10 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SmallFloatingActionButton
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -102,6 +104,23 @@ fun HallScreen(
     timeProvider: TimeProvider = SystemTimeProvider,
 ) {
     val pendingDeleteTable = state.tables.firstOrNull { it.id == state.pendingDeleteTableId }
+    val hookahTable = state.tables.find {
+        it.id == state.selectedHookahTableId && it.hasMultipleHookahs && !state.isEditMode
+    }
+    var previousHookahTableId by remember { mutableStateOf<String?>(null) }
+    var restoreFocusTableId by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(hookahTable?.id) {
+        restoreFocusTableId = if (hookahTable == null) previousHookahTableId else null
+        previousHookahTableId = hookahTable?.id
+    }
+    val snackbar = remember { SnackbarHostState() }
+    val errorMessage = stringResource(R.string.hall_command_error)
+    LaunchedEffect(state.hasCommandError) {
+        if (state.hasCommandError) {
+            snackbar.showSnackbar(errorMessage)
+            onAction(HallAction.DismissCommandError)
+        }
+    }
     val nowEpochMillis = rememberCurrentEpochMillis(timeProvider)
     var fieldSize by remember { mutableStateOf(IntSize.Zero) }
     var viewportScale by rememberSaveable { mutableFloatStateOf(1f) }
@@ -133,7 +152,12 @@ fun HallScreen(
         scale = viewportScale,
         offset = CanvasPosition(viewportOffsetX, viewportOffsetY),
     )
-    val viewport = requestedViewport.clampTo(contentBounds, viewportSize)
+    // Do not overwrite a restored viewport before the recreated field is measured.
+    val viewport = if (viewportSize == CanvasSize.Zero) {
+        requestedViewport
+    } else {
+        requestedViewport.clampTo(contentBounds, viewportSize)
+    }
     val newTablePosition = remember(viewport, viewportSize, tableBounds) {
         if (viewportSize == CanvasSize.Zero) {
             CanvasPosition.Default
@@ -163,58 +187,77 @@ fun HallScreen(
         isActionMenuExpanded = false
     }
 
-    Scaffold(
-        modifier = modifier.fillMaxSize(),
-        floatingActionButton = {
-            HallFloatingActions(
-                state = state,
-                isExpanded = isActionMenuExpanded,
-                isViewportLocked = isViewportLocked,
-                onToggleExpanded = { isActionMenuExpanded = !isActionMenuExpanded },
-                onToggleViewportLock = {
-                    isViewportLocked = !isViewportLocked
-                    isActionMenuExpanded = false
-                },
-                onAddTable = {
-                    isActionMenuExpanded = false
-                    onAction(HallAction.AddTable(newTablePosition))
-                },
-                onAction = { action ->
-                    isActionMenuExpanded = false
-                    onAction(action)
-                },
-            )
-        },
-        containerColor = MaterialTheme.colorScheme.background,
-        contentWindowInsets = WindowInsets.safeDrawing,
-    ) { contentPadding ->
-        Box(modifier = Modifier.fillMaxSize()) {
-            HallField(
-                state = state,
-                viewport = viewport,
-                viewportSize = viewportSize,
-                contentBounds = contentBounds,
-                isViewportLocked = isViewportLocked,
-                onViewportChange = ::updateViewport,
-                onFieldSizeChanged = { fieldSize = it },
-                onAction = onAction,
-                onOpenSettings = onOpenSettings,
-                nowEpochMillis = nowEpochMillis,
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(contentPadding)
-                    .padding(12.dp),
-            )
-            if (isActionMenuExpanded) {
-                Box(
+    val contentWindowInsets = hallContentWindowInsets(state.isFullscreenEnabled)
+    Box(modifier = modifier.fillMaxSize()) {
+        Scaffold(
+            modifier = Modifier.fillMaxSize().then(
+                if (hookahTable != null) Modifier.clearAndSetSemantics {}
+                    .focusProperties { canFocus = false } else Modifier,
+            ),
+            snackbarHost = { SnackbarHost(snackbar) },
+            floatingActionButton = {
+                HallFloatingActions(
+                    state = state,
+                    isExpanded = isActionMenuExpanded,
+                    isViewportLocked = isViewportLocked,
+                    onToggleExpanded = { isActionMenuExpanded = !isActionMenuExpanded },
+                    onToggleViewportLock = {
+                        isViewportLocked = !isViewportLocked
+                        isActionMenuExpanded = false
+                    },
+                    onAddTable = {
+                        isActionMenuExpanded = false
+                        onAction(HallAction.AddTable(newTablePosition))
+                    },
+                    onAction = { action ->
+                        isActionMenuExpanded = false
+                        onAction(action)
+                    },
+                )
+            },
+            containerColor = MaterialTheme.colorScheme.background,
+            contentWindowInsets = contentWindowInsets,
+        ) { contentPadding ->
+            Box(modifier = Modifier.fillMaxSize()) {
+                HallField(
+                    state = state,
+                    viewport = viewport,
+                    viewportSize = viewportSize,
+                    contentBounds = contentBounds,
+                    isViewportLocked = isViewportLocked,
+                    onViewportChange = ::updateViewport,
+                    onFieldSizeChanged = { fieldSize = it },
+                    onAction = onAction,
+                    onOpenSettings = onOpenSettings,
+                    nowEpochMillis = nowEpochMillis,
+                    restoreFocusTableId = restoreFocusTableId,
                     modifier = Modifier
                         .fillMaxSize()
-                        .pointerInput(Unit) {
-                            detectTapGestures { isActionMenuExpanded = false }
-                        }
-                        .testTag(HallTestTags.ACTION_MENU_DISMISS_AREA),
+                        .padding(contentPadding)
+                        .padding(12.dp),
                 )
+                if (isActionMenuExpanded) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .pointerInput(Unit) {
+                                detectTapGestures { isActionMenuExpanded = false }
+                            }
+                            .testTag(HallTestTags.ACTION_MENU_DISMISS_AREA),
+                    )
+                }
             }
+        }
+
+        if (hookahTable != null) {
+            TableHookahsOverlay(
+                table = hookahTable,
+                nowEpochMillis = nowEpochMillis,
+                onAdvance = { onAction(HallAction.AdvanceHookah(hookahTable.id, it)) },
+                onClose = { onAction(HallAction.CloseHookahs) },
+                contentWindowInsets = contentWindowInsets,
+                hasCommandError = state.hasCommandError,
+            )
         }
     }
 
@@ -398,6 +441,7 @@ private fun HallField(
     onAction: (HallAction) -> Unit,
     onOpenSettings: (String) -> Unit,
     nowEpochMillis: Long,
+    restoreFocusTableId: String?,
     modifier: Modifier = Modifier,
 ) {
     val density = LocalDensity.current
@@ -421,6 +465,39 @@ private fun HallField(
                 color = borderColor,
                 shape = fieldShape,
             )
+            .then(
+                if (isViewportLocked) {
+                    Modifier
+                } else {
+                    Modifier.pointerInput(contentBounds, viewportSize) {
+                        var workingViewport = latestViewport
+                        detectTransformGestures { centroid, pan, zoom, _ ->
+                            val focus = ScreenPosition(
+                                x = centroid.x / density.density,
+                                y = centroid.y / density.density,
+                            ).toCanvasPosition(
+                                CanvasTransform(
+                                    workingViewport.scale,
+                                    workingViewport.offset,
+                                ),
+                            )
+                            val zoomedViewport = workingViewport.zoomBy(
+                                zoom,
+                                focus,
+                                contentBounds,
+                                viewportSize,
+                            )
+                            workingViewport = zoomedViewport.panBy(
+                                canvasDeltaX = pan.x / density.density / zoomedViewport.scale,
+                                canvasDeltaY = pan.y / density.density / zoomedViewport.scale,
+                                contentBounds = contentBounds,
+                                viewportSize = viewportSize,
+                            )
+                            onViewportChange(workingViewport)
+                        }
+                    }
+                }
+            )
             .onSizeChanged(onFieldSizeChanged)
             .testTag(HallTestTags.HALL_FIELD),
     ) {
@@ -431,39 +508,6 @@ private fun HallField(
                     viewport = viewport,
                     minorColor = HallMinorGridColor,
                     majorColor = HallMajorGridColor,
-                )
-                .then(
-                    if (isViewportLocked) {
-                        Modifier
-                    } else {
-                        Modifier.pointerInput(contentBounds, viewportSize) {
-                            var workingViewport = latestViewport
-                            detectTransformGestures { centroid, pan, zoom, _ ->
-                                val focus = ScreenPosition(
-                                    x = centroid.x / density.density,
-                                    y = centroid.y / density.density,
-                                ).toCanvasPosition(
-                                    CanvasTransform(
-                                        workingViewport.scale,
-                                        workingViewport.offset,
-                                    ),
-                                )
-                                val zoomedViewport = workingViewport.zoomBy(
-                                    zoom,
-                                    focus,
-                                    contentBounds,
-                                    viewportSize,
-                                )
-                                workingViewport = zoomedViewport.panBy(
-                                    canvasDeltaX = pan.x / density.density / zoomedViewport.scale,
-                                    canvasDeltaY = pan.y / density.density / zoomedViewport.scale,
-                                    contentBounds = contentBounds,
-                                    viewportSize = viewportSize,
-                                )
-                                onViewportChange(workingViewport)
-                            }
-                        }
-                    }
                 )
                 .testTag(HallTestTags.CANVAS_GRID)
                 .semantics {
@@ -491,7 +535,9 @@ private fun HallField(
                     },
                     onOpenSettings = { onOpenSettings(table.id) },
                     onAdvanceTimer = { onAction(HallAction.AdvanceTimer(table.id)) },
+                    onAddHookah = { onAction(HallAction.AddHookah(table.id)) },
                     onDelete = { onAction(HallAction.RequestDelete(table.id)) },
+                    restoreFocus = table.id == restoreFocusTableId,
                 )
             }
         }

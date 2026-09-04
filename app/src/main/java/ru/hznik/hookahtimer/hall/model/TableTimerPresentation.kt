@@ -8,7 +8,16 @@ data class TableTimerPresentation(
     val isCompleted: Boolean = false,
 )
 
-fun HallTable.timerPresentation(nowEpochMillis: Long): TableTimerPresentation =
+fun HallTable.timerPresentation(nowEpochMillis: Long): TableTimerPresentation = when {
+    isCompleted -> TableTimerPresentation(isCompleted = true)
+    mostUrgentHookah != null -> checkNotNull(mostUrgentHookah).timerPresentation(passages, nowEpochMillis)
+    else -> TableTimerPresentation()
+}
+
+fun TableHookah.timerPresentation(
+    passages: List<TablePassage>,
+    nowEpochMillis: Long,
+): TableTimerPresentation =
     when (val state = timerState) {
         TableTimerState.Idle -> TableTimerPresentation()
         TableTimerState.Completed -> TableTimerPresentation(isCompleted = true)

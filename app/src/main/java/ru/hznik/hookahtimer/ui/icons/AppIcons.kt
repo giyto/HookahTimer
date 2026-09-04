@@ -7,6 +7,16 @@ import androidx.compose.ui.graphics.vector.PathParser
 import androidx.compose.ui.unit.dp
 
 object AppIcons {
+    // Source vector: app/src/main/assets/hookah.svg (same 24-unit paths).
+    val Hookah: ImageVector by lazy {
+        materialIcon(
+            "Hookah",
+            "M7,2h8l-1,3h-6z M7,6h8v2H7z M10,8h2v6h-2z " +
+                "M9,14h4l2,4v3H7v-3z M5,21h12v2H5z " +
+                "M13,12c4,0 6,2 6,5h2c0,-4 -3,-7 -8,-7z " +
+                "M19,17h2V7h-2z M18,3h4v5h-4z",
+        )
+    }
     val Menu: ImageVector by lazy {
         materialIcon("Menu", "M3,18h18v-2H3v2z M3,13h18v-2H3v2z M3,6v2h18V6H3z")
     }

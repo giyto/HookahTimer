@@ -10,6 +10,8 @@ data class HallUiState(
     val isEditMode: Boolean = false,
     val isFullscreenEnabled: Boolean = false,
     val pendingDeleteTableId: String? = null,
+    val selectedHookahTableId: String? = null,
+    val hasCommandError: Boolean = false,
 )
 
 sealed interface HallAction {
@@ -30,6 +32,10 @@ sealed interface HallAction {
         val passages: List<TablePassage>,
     ) : HallAction
     data class AdvanceTimer(val tableId: String) : HallAction
+    data class AddHookah(val tableId: String) : HallAction
+    data class AdvanceHookah(val tableId: String, val hookahId: String) : HallAction
+    data object CloseHookahs : HallAction
+    data object DismissCommandError : HallAction
     data object ConfirmDelete : HallAction
     data object CancelDelete : HallAction
 }

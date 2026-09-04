@@ -11,7 +11,11 @@ import ru.hznik.hookahtimer.hall.model.CanvasPosition
 import ru.hznik.hookahtimer.hall.model.TablePassage
 import ru.hznik.hookahtimer.hall.model.TableShape
 import ru.hznik.hookahtimer.hall.model.TableTimerState
-import ru.hznik.hookahtimer.hall.model.advanceTableTimer
+import ru.hznik.hookahtimer.hall.model.TableHookah
+import ru.hznik.hookahtimer.hall.model.withAddedHookah
+import ru.hznik.hookahtimer.hall.model.withAdvancedHookah
+import ru.hznik.hookahtimer.hall.model.withResetHookahs
+import java.util.UUID
 
 class RoomHallRepository(
     private val database: HookahTimerDatabase,
@@ -26,16 +30,29 @@ class RoomHallRepository(
             if (invalidTimerTableIds.isNotEmpty()) {
                 database.withTransaction {
                     invalidTimerTableIds.forEach { tableId ->
-                        dao.updateTimer(
-                            tableId = tableId,
-                            status = TimerStatus.IDLE.name,
-                            passageId = null,
-                            endsAtEpochMillis = null,
-                        )
+                        // Re-read under the transaction: an action may have already
+                        // replaced the invalid snapshot emitted by the flow.
+                        val current = dao.getTable(tableId) ?: return@forEach
+                        if (current.hookahs.isEmpty()) {
+                            dao.insertHookahs(listOf(TableHookah.initial(tableId).toPersisted(tableId)))
+                        } else {
+                            val passageIds = current.passages.map { it.id }
+                            current.hookahs.filter { it.requiresTimerRepair(passageIds) }.forEach {
+                                dao.updateHookah(
+                                    it.copy(
+                                        timerStatus = TimerStatus.IDLE.name,
+                                        currentPassageId = null,
+                                        endsAtEpochMillis = null,
+                                    ),
+                                )
+                            }
+                        }
                     }
+                    dao.getTables().map(TableWithPassages::toDomain)
                 }
+            } else {
+                persistedTables.map(TableWithPassages::toDomain)
             }
-            persistedTables.map(TableWithPassages::toDomain)
         }
         .distinctUntilChanged()
 
@@ -60,6 +77,7 @@ class RoomHallRepository(
             )
             dao.insertTable(persisted.table)
             dao.insertPassages(persisted.passages)
+            dao.insertHookahs(persisted.hookahs)
             dao.upsertMetadata(metadata.copy(nextTableNumber = number + 1))
         }
     }
@@ -92,7 +110,7 @@ class RoomHallRepository(
         database.withTransaction {
             val persistedCurrent = dao.getTable(tableId) ?: return@withTransaction
             val current = persistedCurrent.toDomain()
-            if (current.timerState != TableTimerState.Idle) return@withTransaction
+            if (!current.isIdle) return@withTransaction
             val updated = current.copy(
                 name = trimmedName,
                 shape = shape,
@@ -109,19 +127,58 @@ class RoomHallRepository(
     }
 
     override suspend fun advanceTimer(tableId: String, nowEpochMillis: Long) {
+        changeHookahs(tableId) { table ->
+            when {
+                table.hasMultipleHookahs -> table
+                table.isCompleted -> table.withResetHookahs(UUID.randomUUID().toString())
+                else -> table.withAdvancedHookah(table.hookahs.single().id, nowEpochMillis)
+            }
+        }
+    }
+
+    override suspend fun addHookah(tableId: String, hookahId: String, nowEpochMillis: Long) {
+        changeHookahs(tableId) { it.withAddedHookah(hookahId, nowEpochMillis) }
+    }
+
+    override suspend fun advanceHookah(
+        tableId: String,
+        hookahId: String,
+        nowEpochMillis: Long,
+        expectedState: TableTimerState?,
+    ) {
+        changeHookahs(tableId) { table ->
+            val hookah = table.hookahs.find { it.id == hookahId }
+            if (hookah == null || (expectedState != null && hookah.timerState != expectedState)) {
+                table
+            } else {
+                table.withAdvancedHookah(hookahId, nowEpochMillis)
+            }
+        }
+    }
+
+    override suspend fun resetTable(tableId: String, initialHookahId: String) {
+        changeHookahs(tableId) { it.withResetHookahs(initialHookahId) }
+    }
+
+    private suspend fun changeHookahs(tableId: String, transform: (HallTable) -> HallTable) {
         database.withTransaction {
             val persisted = dao.getTable(tableId) ?: return@withTransaction
-            val table = persisted.toDomain()
-            val nextState = advanceTableTimer(table, nowEpochMillis)
-            val timer = table.copy(timerState = nextState)
-                .toPersisted(persisted.table.sortOrder)
-                .table
-            dao.updateTimer(
-                tableId = tableId,
-                status = timer.timerStatus,
-                passageId = timer.currentPassageId,
-                endsAtEpochMillis = timer.endsAtEpochMillis,
-            )
+            val current = persisted.toDomain()
+            val updated = transform(current)
+            if (updated == current) return@withTransaction
+            val rows = updated.hookahs.map { it.toPersisted(tableId) }
+            if (current.hookahs.any { old -> updated.hookahs.none { it.id == old.id } }) {
+                // Reset, or activation replacing an unused idle placeholder.
+                dao.deleteHookahs(tableId)
+                dao.insertHookahs(rows)
+            } else {
+                val existing = persisted.hookahs.associateBy { it.id }
+                rows.forEach { row ->
+                    val old = existing[row.id]
+                    if (old == null) dao.insertHookahs(listOf(row))
+                    else if (old != row) dao.updateHookah(row)
+                }
+            }
         }
     }
 }

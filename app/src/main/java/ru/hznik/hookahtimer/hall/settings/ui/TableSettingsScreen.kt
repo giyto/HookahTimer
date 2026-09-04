@@ -184,7 +184,11 @@ fun TableSettingsScreen(
                                 passage = passage,
                                 number = index + 1,
                                 canDelete = state.passages.size > 1,
-                                onEditDuration = { activeEditorKey = passage.id },
+                                onEditDuration = {
+                                    // The name must not reopen its keyboard when the dialog closes.
+                                    focusManager.clearFocus()
+                                    activeEditorKey = passage.id
+                                },
                                 onDelete = {
                                     onAction(TableSettingsAction.RemovePassage(passage.id))
                                 },

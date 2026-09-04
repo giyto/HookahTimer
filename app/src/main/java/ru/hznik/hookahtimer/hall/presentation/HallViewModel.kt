@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import java.util.UUID
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -25,6 +26,7 @@ class HallViewModel(
     val timeProvider: TimeProvider = SystemTimeProvider,
     private val idFactory: () -> String = { UUID.randomUUID().toString() },
     private val passageIdFactory: () -> String = { UUID.randomUUID().toString() },
+    private val hookahIdFactory: () -> String = { UUID.randomUUID().toString() },
 ) : ViewModel() {
     private val editorState = MutableStateFlow(EditorState())
     private val commandMutex = Mutex()
@@ -39,6 +41,10 @@ class HallViewModel(
             isEditMode = editor.isEditMode,
             isFullscreenEnabled = editor.isFullscreenEnabled,
             pendingDeleteTableId = editor.pendingDeleteTableId,
+            selectedHookahTableId = editor.selectedHookahTableId?.takeIf { id ->
+                !editor.isEditMode && tables.any { it.id == id && it.hasMultipleHookahs }
+            },
+            hasCommandError = editor.hasCommandError,
         )
     }.stateIn(
         scope = viewModelScope,
@@ -55,6 +61,10 @@ class HallViewModel(
             is HallAction.RequestDelete -> requestDelete(action.tableId)
             is HallAction.UpdateTableSettings -> updateTableSettings(action)
             is HallAction.AdvanceTimer -> advanceTimer(action.tableId)
+            is HallAction.AddHookah -> addHookah(action.tableId)
+            is HallAction.AdvanceHookah -> advanceHookah(action.tableId, action.hookahId)
+            HallAction.CloseHookahs -> editorState.update { it.copy(selectedHookahTableId = null) }
+            HallAction.DismissCommandError -> editorState.update { it.copy(hasCommandError = false) }
             HallAction.ConfirmDelete -> confirmDelete()
             HallAction.CancelDelete -> cancelDelete()
         }
@@ -65,6 +75,7 @@ class HallViewModel(
             current.copy(
                 isEditMode = !current.isEditMode,
                 pendingDeleteTableId = null,
+                selectedHookahTableId = null,
             )
         }
     }
@@ -107,7 +118,7 @@ class HallViewModel(
         val hasUniquePassageIds = action.passages.distinctBy { it.id }.size == action.passages.size
         if (
             !editorState.value.isEditMode ||
-            selectedTable?.timerState != TableTimerState.Idle ||
+            selectedTable?.isIdle != true ||
             trimmedName.isEmpty() ||
             action.passages.isEmpty() ||
             !hasUniquePassageIds
@@ -125,16 +136,43 @@ class HallViewModel(
     }
 
     private fun advanceTimer(tableId: String) {
-        val editor = editorState.value
-        if (editor.isEditMode || state.value.tables.none { it.id == tableId }) return
-
-        val nowEpochMillis = timeProvider.nowEpochMillis()
-        advanceTimerImmediately(tableId, nowEpochMillis)
+        if (editorState.value.isEditMode) return
+        val table = state.value.tables.find { it.id == tableId } ?: return
+        when {
+            table.isCompleted -> launchTableCommand("reset:$tableId") {
+                repository.resetTable(tableId, hookahIdFactory())
+                editorState.update { it.copy(selectedHookahTableId = null) }
+            }
+            table.hasMultipleHookahs ->
+                editorState.update { it.copy(selectedHookahTableId = tableId) }
+            else -> advanceHookah(tableId, table.hookahs.single().id)
+        }
     }
 
-    private fun advanceTimerImmediately(tableId: String, nowEpochMillis: Long) {
-        launchTableCommand(tableId) {
-            repository.advanceTimer(tableId, nowEpochMillis)
+    private fun addHookah(tableId: String) {
+        if (editorState.value.isEditMode) return
+        val table = state.value.tables.find { it.id == tableId } ?: return
+        if (table.isIdle) {
+            advanceHookah(tableId, table.hookahs.single().id)
+            return
+        }
+        val now = timeProvider.nowEpochMillis()
+        val hookahId = hookahIdFactory()
+        launchTableCommand("add:$tableId") {
+            repository.addHookah(tableId, hookahId, now)
+        }
+    }
+
+    private fun advanceHookah(tableId: String, hookahId: String) {
+        if (editorState.value.isEditMode) return
+        val table = state.value.tables.find { it.id == tableId } ?: return
+        val hookah = table.hookahs.find { it.id == hookahId } ?: return
+        if (hookah.timerState == TableTimerState.Completed) return
+        val now = timeProvider.nowEpochMillis()
+        // Separate keys keep concurrent taps on different cards; the repository
+        // re-reads under its transaction and rejects stale taps on the same timer.
+        launchTableCommand("hookah:$tableId:$hookahId") {
+            repository.advanceHookah(tableId, hookahId, now, hookah.timerState)
         }
     }
 
@@ -155,7 +193,7 @@ class HallViewModel(
 
     private fun launchCommand(block: suspend () -> Unit) {
         viewModelScope.launch {
-            commandMutex.withLock { block() }
+            runCommand(block)
         }
     }
 
@@ -165,7 +203,7 @@ class HallViewModel(
         }
         viewModelScope.launch {
             try {
-                commandMutex.withLock { block() }
+                runCommand(block)
             } finally {
                 synchronized(processingTableIds) {
                     processingTableIds.remove(tableId)
@@ -174,10 +212,22 @@ class HallViewModel(
         }
     }
 
+    private suspend fun runCommand(block: suspend () -> Unit) {
+        try {
+            commandMutex.withLock { block() }
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            editorState.update { it.copy(hasCommandError = true) }
+        }
+    }
+
     private data class EditorState(
         val isEditMode: Boolean = false,
         val isFullscreenEnabled: Boolean = false,
         val pendingDeleteTableId: String? = null,
+        val selectedHookahTableId: String? = null,
+        val hasCommandError: Boolean = false,
     )
 
     companion object {

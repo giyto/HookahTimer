@@ -26,6 +26,43 @@ import ru.hznik.hookahtimer.ui.theme.HookahTimerTheme
 import ru.hznik.hookahtimer.window.TabletWindowController
 
 class HookahTimerAppTest {
+    @Test
+    fun hookahOverlayAndBackPreserveFullscreenAndTimerState() {
+        val table = HallTable(
+            id = "table-1", name = "VIP", passages = configuredPassages(),
+            hookahs = listOf(
+                ru.hznik.hookahtimer.hall.model.TableHookah(
+                    "h1", 1, TableTimerState.Running("passage-1", 1_801_000L),
+                ),
+                ru.hznik.hookahtimer.hall.model.TableHookah(
+                    "h2", 2, TableTimerState.Running("passage-1", 1_802_000L),
+                ),
+            ),
+        )
+        val repository = InMemoryHallRepository(listOf(table))
+        val viewModel = HallViewModel(repository, TimeProvider { 1_000L })
+        val controller = RecordingWindowController()
+        setAppContent(viewModel, tabletWindowController = controller)
+        performHallAction(HallTestTags.TOGGLE_FULLSCREEN)
+        val baseline = controller.calls.size
+        composeRule.onNodeWithTag(HallTestTags.table("table-1")).performClick()
+        composeRule.onNodeWithTag(ru.hznik.hookahtimer.hall.ui.HookahTestTags.OVERLAY).assertIsDisplayed()
+        assertEquals("hall:true", controller.calls.last())
+        dispatchActivityBack()
+        composeRule.waitForIdle()
+        assertEquals(table, viewModel.state.value.tables.single())
+        assertEquals("hall:true", controller.calls.last())
+        org.junit.Assert.assertTrue(controller.calls.drop(baseline).all { it == "hall:true" })
+        composeRule.onNodeWithTag(HallTestTags.table("table-1")).performClick()
+        kotlinx.coroutines.runBlocking { repository.deleteTable("table-1") }
+        composeRule.waitUntil(5_000L) {
+            runCatching {
+                composeRule.onNodeWithTag(ru.hznik.hookahtimer.hall.ui.HookahTestTags.OVERLAY).assertDoesNotExist()
+            }.isSuccess
+        }
+        composeRule.onNodeWithTag(HallTestTags.HALL_FIELD).assertIsDisplayed()
+    }
+
     @get:Rule
     val composeRule = createComposeRule()
 

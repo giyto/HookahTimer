@@ -1,11 +1,14 @@
 package ru.hznik.hookahtimer.hall.settings.ui
 
+import android.view.View
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.requiredWidth
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.SideEffect
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsFocused
 import androidx.compose.ui.test.assertIsNotFocused
@@ -20,6 +23,8 @@ import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextReplacement
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -34,6 +39,8 @@ import ru.hznik.hookahtimer.ui.theme.HookahTimerTheme
 class TableSettingsScreenTest {
     @get:Rule
     val composeRule = createComposeRule()
+
+    private lateinit var settingsView: View
 
     @Test
     fun initialSettingsAndShapeAreDisplayed() {
@@ -279,6 +286,16 @@ class TableSettingsScreenTest {
         editorField.performTextReplacement(value)
         composeRule.onNodeWithTag(TableSettingsTestTags.EDITOR_DONE).performClick()
         waitForDurationEditorToClose()
+        composeRule.onNodeWithTag(TableSettingsTestTags.NAME).assertIsNotFocused()
+        // Dialog disposal is synchronous with Compose, but Android's IME animation is not.
+        // Keep the next real touch from using coordinates sampled during that resize.
+        composeRule.waitUntil(timeoutMillis = 5_000L) {
+            composeRule.runOnIdle {
+                val insets = ViewCompat.getRootWindowInsets(settingsView)
+                insets != null && !insets.isVisible(WindowInsetsCompat.Type.ime()) &&
+                    insets.getInsets(WindowInsetsCompat.Type.ime()).bottom == 0
+            }
+        }
     }
 
     private fun waitForEditorFocus() {
@@ -304,6 +321,8 @@ class TableSettingsScreenTest {
         onCancel: () -> Unit = {},
     ) {
         composeRule.setContent {
+            val view = LocalView.current
+            SideEffect { settingsView = view }
             val state by viewModel.state.collectAsState()
             HookahTimerTheme {
                 TableSettingsScreen(

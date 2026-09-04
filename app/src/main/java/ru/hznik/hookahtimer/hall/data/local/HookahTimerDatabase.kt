@@ -10,8 +10,9 @@ import androidx.room.RoomDatabase
         HallTableEntity::class,
         TablePassageEntity::class,
         HallMetadataEntity::class,
+        TableHookahEntity::class,
     ],
-    version = 2,
+    version = 3,
     exportSchema = true,
 )
 abstract class HookahTimerDatabase : RoomDatabase() {
@@ -26,7 +27,7 @@ abstract class HookahTimerDatabase : RoomDatabase() {
                 HookahTimerDatabase::class.java,
                 DATABASE_NAME,
             )
-                .addMigrations(MIGRATION_1_2)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
                 .build()
     }
 }

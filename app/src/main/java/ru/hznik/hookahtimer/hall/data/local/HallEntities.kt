@@ -25,6 +25,27 @@ data class HallTableEntity(
     val canvasY: Float,
     @ColumnInfo(name = "sort_order")
     val sortOrder: Int,
+)
+
+@Entity(
+    tableName = "table_hookahs",
+    foreignKeys = [
+        ForeignKey(
+            entity = HallTableEntity::class,
+            parentColumns = ["table_id"],
+            childColumns = ["table_id"],
+            onDelete = ForeignKey.CASCADE,
+        ),
+    ],
+    indices = [Index("table_id"), Index(value = ["table_id", "number"], unique = true)],
+)
+data class TableHookahEntity(
+    @PrimaryKey
+    @ColumnInfo(name = "hookah_id")
+    val id: String,
+    @ColumnInfo(name = "table_id")
+    val tableId: String,
+    val number: Int,
     @ColumnInfo(name = "timer_status")
     val timerStatus: String,
     @ColumnInfo(name = "current_passage_id")
@@ -80,4 +101,6 @@ data class TableWithPassages(
         entityColumn = "table_id",
     )
     val passages: List<TablePassageEntity>,
+    @Relation(parentColumn = "table_id", entityColumn = "table_id")
+    val hookahs: List<TableHookahEntity>,
 )
