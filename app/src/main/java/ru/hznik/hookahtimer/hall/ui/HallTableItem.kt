@@ -33,8 +33,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
@@ -76,6 +78,7 @@ internal fun HallTableItem(
     var isPressed by remember(table.id) { mutableStateOf(false) }
     val pressScale by animateFloatAsState(if (isPressed) 0.96f else 1f, label = "Table press")
     val focusRequester = remember(table.id) { FocusRequester() }
+    val hapticFeedback = LocalHapticFeedback.current
     LaunchedEffect(restoreFocus) {
         if (restoreFocus && !isEditMode) focusRequester.requestFocus()
     }
@@ -159,6 +162,9 @@ internal fun HallTableItem(
             addLabel = stringResource(R.string.add_hookah),
             onTap = onAdvanceTimer,
             onHold = onAddHookah,
+            onHoldFeedback = {
+                hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
+            },
             onPressed = { isPressed = it },
         )
         table.isIdle -> Modifier.clickable(

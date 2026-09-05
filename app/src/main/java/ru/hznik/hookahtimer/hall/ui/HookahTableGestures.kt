@@ -21,7 +21,8 @@ import androidx.compose.ui.semantics.semantics
 
 /**
  * One recognizer owns tap and hold. Movement, consumption by the canvas or a
- * second pointer cancels both. A completed hold consumes release, never taps.
+ * second pointer cancels both. A completed hold releases the pressed visual,
+ * emits feedback once, consumes the physical release and never taps.
  */
 @Composable
 internal fun Modifier.hookahTableGestures(
@@ -30,10 +31,12 @@ internal fun Modifier.hookahTableGestures(
     addLabel: String,
     onTap: () -> Unit,
     onHold: () -> Unit,
+    onHoldFeedback: () -> Unit,
     onPressed: (Boolean) -> Unit,
 ): Modifier {
     val tap = rememberUpdatedState(onTap)
     val hold = rememberUpdatedState(onHold)
+    val holdFeedback = rememberUpdatedState(onHoldFeedback)
     val pressed = rememberUpdatedState(onPressed)
     return this
         .semantics(mergeDescendants = true) {
@@ -84,6 +87,10 @@ internal fun Modifier.hookahTableGestures(
                         true
                     }
                     if (finished == null && !cancelled) {
+                        // Release the visual while the finger is still down, then confirm
+                        // the recognized physical hold exactly once before adding a hookah.
+                        pressed.value(false)
+                        holdFeedback.value()
                         hold.value()
                         // Keep the gesture until every finger is up; no release click.
                         do {

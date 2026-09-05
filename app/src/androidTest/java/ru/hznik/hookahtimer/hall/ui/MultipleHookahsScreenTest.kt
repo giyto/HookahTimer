@@ -1,16 +1,25 @@
 package ru.hznik.hookahtimer.hall.ui
 
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.size
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.SideEffect
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.hapticfeedback.HapticFeedback
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.InputMode
 import androidx.compose.ui.input.InputModeManager
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalInputModeManager
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.unit.dp
 import androidx.test.platform.app.InstrumentationRegistry
 import org.junit.Assert.*
 import org.junit.Rule
@@ -40,6 +49,7 @@ class MultipleHookahsScreenTest {
         table: HallTable,
         isEditing: Boolean = false,
         nowEpochMillis: Long = 1_000L,
+        hapticFeedback: HapticFeedback? = null,
     ): HallViewModel {
         var nextId = 10
         val vm = HallViewModel(InMemoryHallRepository(listOf(table)), TimeProvider { nowEpochMillis },
@@ -47,10 +57,15 @@ class MultipleHookahsScreenTest {
         if (isEditing) vm.onAction(HallAction.ToggleEditMode)
         compose.setContent {
             val currentInputModeManager = LocalInputModeManager.current
+            val platformHapticFeedback = LocalHapticFeedback.current
             SideEffect { inputModeManager = currentInputModeManager }
             val state by vm.state.collectAsState()
-            HookahTimerTheme {
-                HallScreen(state, vm::onAction, timeProvider = vm.timeProvider)
+            CompositionLocalProvider(
+                LocalHapticFeedback provides (hapticFeedback ?: platformHapticFeedback),
+            ) {
+                HookahTimerTheme {
+                    HallScreen(state, vm::onAction, timeProvider = vm.timeProvider)
+                }
             }
         }
         compose.waitUntil(5_000L) {
@@ -60,7 +75,8 @@ class MultipleHookahsScreenTest {
     }
 
     @Test fun holdAndReleaseAddsExactlyOneWithoutTapOrViewportChange() {
-        val vm = show(active())
+        val hapticFeedback = RecordingHapticFeedback()
+        val vm = show(active(), hapticFeedback = hapticFeedback)
         val original = vm.state.value.tables.single()
         val viewport = compose.onNodeWithTag(HallTestTags.CANVAS_GRID).fetchSemanticsNode().config
         compose.onNodeWithTag(HallTestTags.table("t")).performTouchInput { longClick(durationMillis = 1_500L) }
@@ -76,21 +92,55 @@ class MultipleHookahsScreenTest {
         compose.onNodeWithTag(HookahTestTags.tableCount("t"), useUnmergedTree = true)
             .assertIsDisplayed()
             .assertTextEquals("2")
+        assertEquals(listOf(HapticFeedbackType.LongPress), hapticFeedback.events)
+    }
+
+    @Test fun recognizedHoldReleasesVisualBeforeFeedbackAndCommand() {
+        val events = mutableListOf<String>()
+        compose.setContent {
+            Box(
+                Modifier
+                    .size(120.dp)
+                    .testTag("hookah_hold_gesture")
+                    .hookahTableGestures(
+                        tableId = "gesture-test",
+                        tapLabel = "Tap",
+                        addLabel = "Hold",
+                        onTap = { events += "tap" },
+                        onHold = { events += "hold" },
+                        onHoldFeedback = { events += "feedback" },
+                        onPressed = { events += "pressed:$it" },
+                    ),
+            )
+        }
+        compose.onNodeWithTag("hookah_hold_gesture")
+            .performTouchInput { longClick(durationMillis = 1_500L) }
+        compose.runOnIdle {
+            assertEquals(
+                listOf("pressed:true", "pressed:false", "feedback", "hold", "pressed:false"),
+                events,
+            )
+        }
     }
 
     @Test fun freeTableHoldStartsNumberOneAndSingleTapStillAdvancesDirectly() {
-        val vm = show(base())
+        val hapticFeedback = RecordingHapticFeedback()
+        val vm = show(base(), hapticFeedback = hapticFeedback)
         compose.onNodeWithTag(HallTestTags.table("t")).performTouchInput { longClick() }
         compose.waitUntil(5_000L) { !vm.state.value.tables.single().isIdle }
         assertEquals(1, vm.state.value.tables.single().hookahs.size)
+        assertEquals(listOf(HapticFeedbackType.LongPress), hapticFeedback.events)
+        hapticFeedback.events.clear()
         compose.onNodeWithTag(HallTestTags.table("t")).performTouchInput { click() }
         compose.waitForIdle()
         assertEquals(TableTimerState.Running("p2", 181_000L), vm.state.value.tables.single().timerState)
         assertNull(vm.state.value.selectedHookahTableId)
+        assertTrue(hapticFeedback.events.isEmpty())
     }
 
     @Test fun movementCancelsHoldWithoutAddingOrAdvancing() {
-        val vm = show(active())
+        val hapticFeedback = RecordingHapticFeedback()
+        val vm = show(active(), hapticFeedback = hapticFeedback)
         val before = vm.state.value.tables.single().hookahs
         compose.onNodeWithTag(HallTestTags.table("t")).performTouchInput {
             down(center)
@@ -100,10 +150,12 @@ class MultipleHookahsScreenTest {
         }
         compose.waitForIdle()
         assertEquals(before, vm.state.value.tables.single().hookahs)
+        assertTrue(hapticFeedback.events.isEmpty())
     }
 
     @Test fun cancelledTouchDoesNotAddOrAdvance() {
-        val vm = show(active())
+        val hapticFeedback = RecordingHapticFeedback()
+        val vm = show(active(), hapticFeedback = hapticFeedback)
         val before = vm.state.value.tables.single()
         compose.onNodeWithTag(HallTestTags.table("t")).performTouchInput {
             down(center)
@@ -113,10 +165,12 @@ class MultipleHookahsScreenTest {
         compose.waitForIdle()
         assertEquals(before, vm.state.value.tables.single())
         assertNull(vm.state.value.selectedHookahTableId)
+        assertTrue(hapticFeedback.events.isEmpty())
     }
 
     @Test fun secondFingerCancelsHoldEvenWhenViewportIsLocked() {
-        val vm = show(active())
+        val hapticFeedback = RecordingHapticFeedback()
+        val vm = show(active(), hapticFeedback = hapticFeedback)
         compose.onNodeWithTag(HallTestTags.ACTION_MENU).performClick()
         compose.onNodeWithTag(HallTestTags.TOGGLE_VIEWPORT_LOCK).performClick()
         val before = vm.state.value.tables.single().hookahs
@@ -130,17 +184,21 @@ class MultipleHookahsScreenTest {
         }
         compose.waitForIdle()
         assertEquals(before, vm.state.value.tables.single().hookahs)
+        assertTrue(hapticFeedback.events.isEmpty())
         compose.onNodeWithTag(HallTestTags.table("t")).performTouchInput { longClick() }
         compose.waitUntil(5_000L) { vm.state.value.tables.single().hookahs.size == 2 }
         assertTrue(compose.onNodeWithTag(HallTestTags.CANVAS_GRID).fetchSemanticsNode().config[CanvasLockedKey])
+        assertEquals(listOf(HapticFeedbackType.LongPress), hapticFeedback.events)
     }
 
     @Test fun holdingInEditModeDoesNotAddHookah() {
-        val vm = show(active(), isEditing = true)
+        val hapticFeedback = RecordingHapticFeedback()
+        val vm = show(active(), isEditing = true, hapticFeedback = hapticFeedback)
         compose.onNodeWithTag(HallTestTags.table("t")).performTouchInput { longClick() }
         compose.waitForIdle()
         assertEquals(1, vm.state.value.tables.single().hookahs.size)
         assertNull(vm.state.value.selectedHookahTableId)
+        assertTrue(hapticFeedback.events.isEmpty())
     }
 
     @Test fun gridHasTwoColumnsSquareCardsAndOnlySelectedHookahAdvances() {
@@ -251,10 +309,11 @@ class MultipleHookahsScreenTest {
     }
 
     @Test fun accessibleHoldAddsNextHookahWithoutResettingCompletedTable() {
+        val hapticFeedback = RecordingHapticFeedback()
         val completed = multiple().copy(hookahs = multiple().hookahs.map {
             it.copy(timerState = TableTimerState.Completed)
         })
-        val vm = show(completed)
+        val vm = show(completed, hapticFeedback = hapticFeedback)
         val table = compose.onNodeWithTag(HallTestTags.table("t"))
         table.assert(longClickLabelIs("Добавить кальян"))
             .performSemanticsAction(SemanticsActions.OnLongClick) { action -> assertTrue(action()) }
@@ -265,6 +324,7 @@ class MultipleHookahsScreenTest {
         assertEquals(TableTimerState.Running("p1", 121_000L), updated.hookahs.last().timerState)
         assertNull(vm.state.value.selectedHookahTableId)
         table.assert(clickLabelIs("Открыть кальяны стола"))
+        assertTrue(hapticFeedback.events.isEmpty())
     }
 
     @Test fun tableClickLabelFollowsIdleRunningAndMultipleStates() {
@@ -382,5 +442,13 @@ class MultipleHookahsScreenTest {
 
     private fun longClickLabelIs(label: String) = SemanticsMatcher("Long click label is '$label'") {
         it.config.contains(SemanticsActions.OnLongClick) && it.config[SemanticsActions.OnLongClick].label == label
+    }
+
+    private class RecordingHapticFeedback : HapticFeedback {
+        val events = mutableListOf<HapticFeedbackType>()
+
+        override fun performHapticFeedback(hapticFeedbackType: HapticFeedbackType) {
+            events += hapticFeedbackType
+        }
     }
 }
