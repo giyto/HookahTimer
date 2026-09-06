@@ -1,5 +1,10 @@
 package ru.hznik.hookahtimer.hall.ui
 
+import android.content.Context
+import android.os.Build
+import android.os.VibrationEffect
+import android.os.Vibrator
+import android.os.VibratorManager
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Arrangement
@@ -28,6 +33,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -35,6 +41,7 @@ import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.testTag
@@ -61,6 +68,8 @@ import ru.hznik.hookahtimer.hall.model.timerPresentation
 import ru.hznik.hookahtimer.hall.model.toScreenPosition
 import ru.hznik.hookahtimer.ui.icons.AppIcons
 
+internal val LocalAddHookahHapticFeedback = staticCompositionLocalOf<(() -> Unit)?> { null }
+
 @Composable
 internal fun HallTableItem(
     table: HallTable,
@@ -78,7 +87,10 @@ internal fun HallTableItem(
     var isPressed by remember(table.id) { mutableStateOf(false) }
     val pressScale by animateFloatAsState(if (isPressed) 0.96f else 1f, label = "Table press")
     val focusRequester = remember(table.id) { FocusRequester() }
+    val context = LocalContext.current
+    val vibrator = remember(context) { context.applicationContext.deviceVibrator() }
     val hapticFeedback = LocalHapticFeedback.current
+    val addHookahHapticFeedback = LocalAddHookahHapticFeedback.current
     LaunchedEffect(restoreFocus) {
         if (restoreFocus && !isEditMode) focusRequester.requestFocus()
     }
@@ -163,7 +175,18 @@ internal fun HallTableItem(
             onTap = onAdvanceTimer,
             onHold = onAddHookah,
             onHoldFeedback = {
-                hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
+                if (addHookahHapticFeedback != null) {
+                    addHookahHapticFeedback()
+                } else if (vibrator?.hasVibrator() == true) {
+                    vibrator.vibrate(
+                        VibrationEffect.createOneShot(
+                            ADD_HOOKAH_VIBRATION_DURATION_MILLIS,
+                            ADD_HOOKAH_VIBRATION_AMPLITUDE,
+                        ),
+                    )
+                } else {
+                    hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
+                }
             },
             onPressed = { isPressed = it },
         )
@@ -289,6 +312,16 @@ internal fun HallTableItem(
         }
     }
 }
+
+private fun Context.deviceVibrator(): Vibrator? =
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+        getSystemService(VibratorManager::class.java)?.defaultVibrator
+    } else {
+        getSystemService(Vibrator::class.java)
+    }
+
+private const val ADD_HOOKAH_VIBRATION_DURATION_MILLIS = 60L
+private const val ADD_HOOKAH_VIBRATION_AMPLITUDE = 200
 
 @Composable
 private fun BoxScope.MultipleHookahsTableContent(table: HallTable, nowEpochMillis: Long) {

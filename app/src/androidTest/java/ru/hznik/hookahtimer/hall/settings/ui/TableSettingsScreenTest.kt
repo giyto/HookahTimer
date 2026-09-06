@@ -9,6 +9,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.SideEffect
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsFocused
 import androidx.compose.ui.test.assertIsNotFocused
@@ -20,6 +21,7 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performTextReplacement
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
@@ -161,7 +163,10 @@ class TableSettingsScreenTest {
         waitForFocus(TableSettingsTestTags.NAME)
         nameField.performTextReplacement("Терраса")
 
-        composeRule.onNodeWithTag(TableSettingsTestTags.SIDE_PANEL).performClick()
+        composeRule.onNodeWithTag(TableSettingsTestTags.SIDE_PANEL)
+            .performSemanticsAction(SemanticsActions.OnClick) { action ->
+                assertTrue(action())
+            }
 
         nameField.assertIsNotFocused().assertTextContains("Терраса")
         composeRule.onNodeWithTag(TableSettingsTestTags.SAVE).assertIsDisplayed()

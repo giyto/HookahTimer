@@ -12,7 +12,6 @@ import androidx.compose.ui.hapticfeedback.HapticFeedback
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.InputMode
 import androidx.compose.ui.input.InputModeManager
-import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalInputModeManager
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.SemanticsActions
@@ -57,11 +56,12 @@ class MultipleHookahsScreenTest {
         if (isEditing) vm.onAction(HallAction.ToggleEditMode)
         compose.setContent {
             val currentInputModeManager = LocalInputModeManager.current
-            val platformHapticFeedback = LocalHapticFeedback.current
             SideEffect { inputModeManager = currentInputModeManager }
             val state by vm.state.collectAsState()
             CompositionLocalProvider(
-                LocalHapticFeedback provides (hapticFeedback ?: platformHapticFeedback),
+                LocalAddHookahHapticFeedback provides hapticFeedback?.let { feedback ->
+                    { feedback.performHapticFeedback(HapticFeedbackType.LongPress) }
+                },
             ) {
                 HookahTimerTheme {
                     HallScreen(state, vm::onAction, timeProvider = vm.timeProvider)
